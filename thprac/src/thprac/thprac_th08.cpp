@@ -204,7 +204,7 @@ namespace TH08 {
                         *mGauge = 0;
 						break;
                     }
-                    
+
                 }
                 mGaugeType = gaugeType;
                 break;
@@ -612,27 +612,27 @@ namespace TH08 {
         PATCH_HK(0x44abda, "B970A64E00E8BC1F0000E9C0020000"),
         PATCH_HK(0x44Ab86, "03")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfLives, TH_INFLIVES, "F2", VK_F2)
         PATCH_HK(0x44D0FA, "00")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfBombs, TH_INFBOMBS, "F3", VK_F3)
         PATCH_HK(0x44CA78, "00"),
         PATCH_HK(0x44CAA4, "00"),
         PATCH_HK(0x44CA5D, "01")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfPower, TH_INFPOWER, "F4", VK_F4)
         PATCH_HK(0x44CDB1, "00"),
         PATCH_HK(0x44CDA2, "909090909090909090909090")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mTimeLock, TH_TIMELOCK, "F5", VK_F5)
         PATCH_HK(0x416CBE, "2ee9"),
         PATCH_HK(0x42DDB5, "eb")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mAutoBomb, TH_AUTOBOMB, "F6", VK_F6)
         PATCH_HK(0x44CC18, "ff89"),
         PATCH_HK(0x44CC21, "66C70528D5640102"),
@@ -658,9 +658,9 @@ namespace TH08 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th08.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th08.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th08.dll", hash);
                 if (hash[0] != 14324321420199198230ll || hash[1] != 10561235471127337137ll)
@@ -2542,7 +2542,7 @@ namespace TH08 {
         // Reset thPracParam
         thPracParam.Reset();
     }
-    
+
     HOOKSET_DEFINE(THInitHook)
     PATCH_DY(th08_disable_dataver, 0x40bb80, "33c0c3")
     PATCH_DY(th08_disable_demo, 0x467aca, "ffffff7f")

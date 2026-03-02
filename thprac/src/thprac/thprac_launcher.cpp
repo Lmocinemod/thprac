@@ -99,7 +99,7 @@ void DrawTitleBar(HWND hwnd, const char* title) {
 
         if (hovered) {
             ImGui::GetWindowDrawList()->AddCircleFilled(btnCenter, (btnW / 2) - 2.0f, ImGui::GetColorU32(ImGuiCol_ButtonHovered));
-        }    
+        }
 
         ImVec2 lineLeft = btnCenter;
         ImVec2 lineRight = btnCenter;
@@ -107,7 +107,7 @@ void DrawTitleBar(HWND hwnd, const char* title) {
         lineLeft.x -= cross_extent;
         lineRight.x += cross_extent;
 
-        ImGui::GetWindowDrawList()->AddLine(lineLeft, lineRight, ImGui::GetColorU32(ImGuiCol_Text), 1.5f);         
+        ImGui::GetWindowDrawList()->AddLine(lineLeft, lineRight, ImGui::GetColorU32(ImGuiCol_Text), 1.5f);
 
         overBtn |= hovered;
     }
@@ -133,9 +133,9 @@ void DrawTitleBar(HWND hwnd, const char* title) {
 
         lineTopLeft.x -= cross_extent;
         lineTopLeft.y -= cross_extent;
-        
+
         lineTopRight.x += cross_extent;
-        lineTopRight.y -= cross_extent;      
+        lineTopRight.y -= cross_extent;
 
         lineBottomLeft.x -= cross_extent;
         lineBottomLeft.y += cross_extent;
@@ -144,7 +144,7 @@ void DrawTitleBar(HWND hwnd, const char* title) {
         lineBottomRight.y += cross_extent;
 
         ImGui::GetWindowDrawList()->AddLine(lineBottomRight, lineTopLeft, ImGui::GetColorU32(ImGuiCol_Text));
-        ImGui::GetWindowDrawList()->AddLine(lineTopRight, lineBottomLeft, ImGui::GetColorU32(ImGuiCol_Text));     
+        ImGui::GetWindowDrawList()->AddLine(lineTopRight, lineBottomLeft, ImGui::GetColorU32(ImGuiCol_Text));
 
         overBtn |= hovered;
     }
@@ -167,7 +167,7 @@ void UiUpdate(HWND hwnd) {
     auto& io = ImGui::GetIO();
     auto& style = ImGui::GetStyle();
     style.WindowBorderSize = 0.0f;
-    
+
     ImGui::SetNextWindowPos({ 0.0f, 0.0f });
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 0.0f });
@@ -290,7 +290,7 @@ int Launcher(HINSTANCE hInstance, int nCmdShow) {
     }
     defer(DestroyWindow(hwnd));
     DwmTweaksForCustomTitlebar(hwnd);
-    
+
     IDirect3DDevice9* dev;
     if (d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hwnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &g_d3dpp, &dev) < 0) {
         return 1;
@@ -438,7 +438,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (pt.y < titleH && !g_IsOverTitleBarButton)
             return HTCAPTION; // enables drag, double-click maximise, system menu on right-click
 
-        return HTCLIENT;    
+        return HTCLIENT;
     }
     case WM_GETMINMAXINFO: {
         LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
@@ -502,11 +502,11 @@ void ResetDevice() {
 
 bool UpdateUIScaling(float scale) {
     // Not rebuilding the font atlas here because it doesn't seem to do anything
-    ImGuiIO& io = ImGui::GetIO();
+    // ImGuiIO& io = ImGui::GetIO();
 
     g_IsUITextureIDValid = false;
     Gui::ImplDX9InvalidateDeviceObjects();
-    
+
     // Setup Dear ImGui style
     g_TitleBarHeight = 26.0f * scale;
     ImGuiStyle& style = ImGui::GetStyle();

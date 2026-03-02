@@ -491,24 +491,24 @@ namespace TH128 {
         PATCH_HK(0x43d11b, "83c4109090"),
         PATCH_HK(0x432735, "e99f00000090")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfLives, TH_INFLIVES, "F2", VK_F2)
         PATCH_HK(0x43CDD9, "00000000")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfBombs, TH_INFBOMBS, "F3", VK_F3)
         PATCH_HK(0x43B7D7, "00000000"),
         PATCH_HK(0x43B90D, "00000000")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfPower, TH_INFPOWER, "F4", VK_F4)
         PATCH_HK(0x41F429, "00")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mTimeLock, TH_TIMELOCK, "F5", VK_F5)
         PATCH_HK(0x417307, "90")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mAutoBomb, TH_AUTOBOMB, "F6", VK_F6)
         PATCH_HK(0x43B8E8, "c6"),
         PATCH_HK(0x43B8F1, "00")
@@ -522,9 +522,9 @@ namespace TH128 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th128.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th128.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th128.dll", hash);
                 if (hash[0] != 14796143656184423751ll || hash[1] != 15800222838538749590ll)

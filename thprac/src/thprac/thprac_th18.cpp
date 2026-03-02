@@ -50,7 +50,7 @@ namespace TH18 {
         ANM_MANAGER_PTR = 0x51f65c,
         WINDOW_PTR = 0x568c30,
     };
-    
+
     enum cards {
         KOZUCHI = 42,
         KANAME,
@@ -294,7 +294,7 @@ namespace TH18 {
         }
     };
     THPracParam thPracParam {};
-    
+
     EHOOK_ST(th18_free_blank, 0x411f4b, 2, {
         pCtx->Eip = 0x411f52;
         self->Disable();
@@ -1306,7 +1306,7 @@ namespace TH18 {
     public:
         static void StaticMalletConversion(PCONTEXT pCtx) {
             int32_t mallet_cancel_item_type = GetMemContent(BULLET_MANAGER_PTR, 0x7a41d0) % 30;
-            
+
             switch (mallet_cancel_item_type) {
                 case 0:
                 case 3:
@@ -1653,7 +1653,7 @@ namespace TH18 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
             } else if (*(uint8_t*)0x4cd011 == 3) {
                 mOptCtx.fps_status = 1;
@@ -1694,7 +1694,7 @@ namespace TH18 {
             for (size_t i = 0; i < elementsof(scoreUncapHooks); i++) {
                 scoreUncapHooks[i].Setup();
             }
-            
+
             th18_score_uncap_replay_fix.Setup();
             th18_score_uncap_replay_disp.Setup();
             th18_score_uncap_replay_factor.Setup();
@@ -3925,7 +3925,7 @@ namespace TH18 {
         DWORD oldProtect;
         VirtualProtect((void*)0x4b7ad8, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
         *(const char**)(0x4b7ad8) = "%s  %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %2.1f%%";
-        VirtualProtect((void*)0x4b7ad8, 4, oldProtect, &oldProtect); 
+        VirtualProtect((void*)0x4b7ad8, 4, oldProtect, &oldProtect);
 
         // Reset thPracParam
         thPracParam.Reset();

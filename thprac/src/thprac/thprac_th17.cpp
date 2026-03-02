@@ -830,7 +830,7 @@ namespace TH17 {
 
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
             } else if (*(uint8_t*)0x4b5cd9 == 3) {
                 mOptCtx.fps_status = 1;
@@ -2088,7 +2088,7 @@ namespace TH17 {
         ImGui::TextColored(otter, "%d", tracker_info.th17.roaring[1]) NEXT;
         ImGui::TextUnformatted("/") NEXT;
         ImGui::TextColored(eagle, "%d", tracker_info.th17.roaring[2]) NEXT;
-    
+
         ImGui::TextUnformatted(")");
 
         #undef NEXT
@@ -2149,7 +2149,7 @@ namespace TH17 {
 
         ImGui::End();
     }
-    
+
     HOOKSET_DEFINE(THMainHook)
     { .addr = 0x4302E6, .name = "th17_enter", .callback = tracker_reset, .data = PatchHookImpl(6) },
     { .addr = 0x44921B, .name = "th17_life_dec", .callback = th10_tracker_count_miss, .data = PatchHookImpl(6) },
@@ -2391,7 +2391,7 @@ namespace TH17 {
         DWORD oldProtect;
         VirtualProtect((void*)0x4a2cb8, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
         *(const char**)(0x4a2cb8) = "%s  %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %2.1f%%";
-        VirtualProtect((void*)0x4a2cb8, 4, oldProtect, &oldProtect); 
+        VirtualProtect((void*)0x4a2cb8, 4, oldProtect, &oldProtect);
 
         // Reset thPracParam
         thPracParam.Reset();

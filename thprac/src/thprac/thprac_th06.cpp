@@ -10,7 +10,7 @@ namespace TH06 {
         TH_TRACKER_REIMU_A, TH_TRACKER_REIMU_B,
         TH_TRACKER_MARISA_A, TH_TRACKER_MARISA_B
     };
-    
+
     static const GameManager* const GAME_MANAGER = (const GameManager* const)0x69bca0;
 
     enum ADDRS {
@@ -183,29 +183,29 @@ namespace TH06 {
         }
 
         Gui::GuiHotKeyChord mMenu { "ModMenuToggle", "BACKSPACE", Gui::GetBackspaceMenuChord() };
-        
+
         HOTKEY_DEFINE(mMuteki, TH_MUTEKI, "F1", VK_F1)
         PATCH_HK(0x4277c2, "03"),
         PATCH_HK(0x42779a, "83c4109090")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfLives, TH_INFLIVES, "F2", VK_F2)
         PATCH_HK(0x428DDC, "15")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfBombs, TH_INFBOMBS, "F3", VK_F3)
         PATCH_HK(0x4289e3, "00")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfPower, TH_INFPOWER, "F4", VK_F4)
         PATCH_HK(0x428B7D, "00"),
         PATCH_HK(0x428B67,"909090909090909090")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mTimeLock, TH_TIMELOCK, "F5", VK_F5)
         PATCH_HK(0x412DD1, "eb")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mAutoBomb, TH_AUTOBOMB, "F6", VK_F6)
         PATCH_HK(0x428989, "EB1D"),
         PATCH_HK(0x4289B4, "85D2"),
@@ -787,9 +787,9 @@ namespace TH06 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (int32_t)GetModuleHandleW(L"vpatch_th06.dll")) {
+            } else if ((mOptCtx.vpatch_base = (int32_t)GetModuleHandleW(L"vpatch_th06.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th06.dll", hash);
                 if (hash[0] != 3665784961181135876ll || hash[1] != 9283021252209177490ll)
@@ -798,7 +798,7 @@ namespace TH06 {
                     mOptCtx.fps_status = 2;
                     mOptCtx.fps = *(int32_t*)(mOptCtx.vpatch_base + 0x17034);
                 }
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th06_unicode.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th06_unicode.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th06_unicode.dll", hash);
                 if (hash[0] != 5021620919341617817ll || hash[1] != 10919509441391235291ll)
@@ -1880,15 +1880,15 @@ namespace TH06 {
     void THTrackerUpdate() {
         ImGui::SetNextWindowSize({ 180.0f, 0.0f });
         ImGui::SetNextWindowPos({ 433.0f, 245.0f });
-        ImGui::Begin("Tracker", nullptr, 
-            ImGuiWindowFlags_NoScrollbar | 
-            ImGuiWindowFlags_NoScrollWithMouse | 
-            ImGuiWindowFlags_NoTitleBar | 
-            ImGuiWindowFlags_NoResize | 
-            ImGuiWindowFlags_NoMove | 
-            ImGuiWindowFlags_NoSavedSettings | 
-            ImGuiWindowFlags_NoInputs | 
-            ImGuiWindowFlags_NoFocusOnAppearing | 
+        ImGui::Begin("Tracker", nullptr,
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_NoTitleBar |
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoFocusOnAppearing |
             ImGuiWindowFlags_NoNav
         );
 
@@ -1897,7 +1897,7 @@ namespace TH06 {
         auto textSize = ImGui::CalcTextSize(buf);
 
         ImGui::SetCursorPosX(ImGui::GetWindowSize().x * 0.5f - textSize.x * 0.5f);
-        ImGui::TextUnformatted(buf);        
+        ImGui::TextUnformatted(buf);
 
         ImGui::BeginTable("Tracker table", 2);
         ImGui::TableNextRow();
@@ -1906,7 +1906,7 @@ namespace TH06 {
         ImGui::TextUnformatted(S(TH_TRACKER_MISS));
         ImGui::TableNextColumn();
         ImGui::Text("%d", tracker_info.th06.misses);
-        
+
         ImGui::TableNextRow();
 
         ImGui::TableNextColumn();
@@ -2183,7 +2183,7 @@ namespace TH06 {
         THGuiRep::singleton();
         THOverlay::singleton();
 
-        
+
         // Hooks
         EnableAllHooks(THMainHook);
         th06_white_screen.Setup();

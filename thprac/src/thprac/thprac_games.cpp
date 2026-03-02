@@ -341,7 +341,7 @@ void GameGuiBegin(game_gui_impl impl, bool game_nav)
         break;
     }
     GameGuiProgress = 1;
-       
+
     if (Gui::GetChordPressed(Gui::GetTrackerChord())) {
         if (tracker_open) {
             tracker_open = false;
@@ -1109,7 +1109,7 @@ void* yyjson_string_alc_alloc(void* ctx, size_t size) {
     return str->data();
 }
 
-void* yyjson_string_alc_realloc(void* ctx, void* ptr, size_t old_size, size_t size) {
+void* yyjson_string_alc_realloc(void* ctx, [[maybe_unused]] void* ptr, size_t old_size, size_t size) {
     auto* str = (std::string*)ctx;
     if (size > old_size) {
         str->append(size - old_size, 0);
@@ -1119,7 +1119,7 @@ void* yyjson_string_alc_realloc(void* ctx, void* ptr, size_t old_size, size_t si
     return str->data();
 }
 
-void yyjson_string_alc_free(void* ctx, void* ptr) { };
+void yyjson_string_alc_free([[maybe_unused]] void* ctx, [[maybe_unused]] void* ptr) { };
 #pragma endregion
 
 

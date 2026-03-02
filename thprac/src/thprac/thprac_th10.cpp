@@ -548,9 +548,9 @@ namespace TH10 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th10.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th10.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th10.dll", hash);
                 if (hash[0] != 9704945468076323108ll || hash[1] != 99312983382598050ll)
@@ -2209,8 +2209,8 @@ namespace TH10 {
     PATCH_ST(th10_real_bullet_sprite, 0x406e03, "0F8413050000");
 
     constexpr th_glossary_t SHOTTYPE_NAMES[] = {
-        TH_TRACKER_REIMU_A, TH_TRACKER_REIMU_B, TH_TRACKER_REIMU_C, 
-        TH_TRACKER_MARISA_A, TH_TRACKER_MARISA_B, TH_TRACKER_MARISA_C 
+        TH_TRACKER_REIMU_A, TH_TRACKER_REIMU_B, TH_TRACKER_REIMU_C,
+        TH_TRACKER_MARISA_A, TH_TRACKER_MARISA_B, TH_TRACKER_MARISA_C
     };
     void THTrackerUpdate()
     {

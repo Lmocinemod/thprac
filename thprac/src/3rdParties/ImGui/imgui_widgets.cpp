@@ -1,3 +1,4 @@
+#pragma warning(disable:4100)
 // dear imgui, v1.82
 // (widgets code)
 

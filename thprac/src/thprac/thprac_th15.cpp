@@ -474,7 +474,7 @@ namespace TH15 {
         }
 
         Gui::GuiHotKeyChord mMenu { "ModMenuToggle", "BACKSPACE", Gui::GetBackspaceMenuChord() };
-        
+
         HOTKEY_DEFINE(mMuteki, TH_MUTEKI, "F1", VK_F1)
         PATCH_HK(0x4566a5, "01")
         HOTKEY_ENDDEF();
@@ -526,9 +526,9 @@ namespace TH15 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th15.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th15.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th15.dll", hash);
 
@@ -1848,7 +1848,7 @@ namespace TH15 {
     { .addr = 0x43E6EE, .name = "th15_enter", .callback = tracker_reset, .data = PatchHookImpl(7) },
     { .addr = 0x41497A, .name = "th15_bomb_dec", .callback = th10_tracker_count_bomb, .data = PatchHookImpl(5) },
     { .addr = 0x456398, .name = "th15_life_dec", .callback = th10_tracker_count_miss, .data = PatchHookImpl(5) },
-    
+
     EHOOK_DY(th15_everlasting_bgm, 0x476f10, 1, {
         int32_t retn_addr = ((int32_t*)pCtx->Esp)[0];
         int32_t bgm_cmd = ((int32_t*)pCtx->Esp)[1];

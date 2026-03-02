@@ -62,7 +62,7 @@ namespace TH165 {
         }
 
         Gui::GuiHotKeyChord mMenu { "ModMenuToggle", "BACKSPACE", Gui::GetBackspaceMenuChord() };
-        
+
         HOTKEY_DEFINE(mMuteki, TH_MUTEKI, "F1", VK_F1)
         PATCH_HK(0x446a80, "01")
         HOTKEY_ENDDEF();
@@ -84,7 +84,7 @@ namespace TH165 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
             } else if (*(uint8_t*)0x4b3d09 == 3) {
                 mOptCtx.fps_status = 1;

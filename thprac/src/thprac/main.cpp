@@ -38,7 +38,7 @@ bool PrivilegeCheck()
 
 int WINAPI wWinMain(
     _In_ HINSTANCE hInstance,
-    _In_opt_ HINSTANCE hPrevInstance,
+    [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance,
     _In_ PWSTR pCmdLine,
     _In_ int nCmdShow)
 {
@@ -50,7 +50,7 @@ int WINAPI wWinMain(
     log_init(true, gSettings.console);
 
     if (gSettings.thprac_admin_rights && !PrivilegeCheck()) {
-        ShellExecuteW(NULL, L"runas", CurrentPeb()->ProcessParameters->ImagePathName.Buffer, nullptr, nullptr, nCmdShow);        
+        ShellExecuteW(NULL, L"runas", CurrentPeb()->ProcessParameters->ImagePathName.Buffer, nullptr, nullptr, nCmdShow);
     }
 
     int argc = 0;
@@ -127,7 +127,7 @@ int WINAPI wWinMain(
         FindAndAttach(false, false);
         return 0;
     } else if (!gSettings.dont_search_ongoing_game && FindAndAttach(false, true)) {
-        return 0;        
+        return 0;
     }
 
     // I already need all of this to have it's own scope.

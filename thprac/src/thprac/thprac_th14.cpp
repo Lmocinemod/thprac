@@ -521,7 +521,7 @@ namespace TH14 {
         }
 
         Gui::GuiHotKeyChord mMenu { "ModMenuToggle", "BACKSPACE", Gui::GetBackspaceMenuChord() };
-        
+
         HOTKEY_DEFINE(mMuteki, TH_MUTEKI, "F1", VK_F1)
         PATCH_HK(0x44F877, "01")
         HOTKEY_ENDDEF();
@@ -907,7 +907,7 @@ namespace TH14 {
         // Option Related Functions
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
             } else {
                 mOptCtx.vpatch_base = (int32_t)GetModuleHandleW(L"vpatch_th14.dll");

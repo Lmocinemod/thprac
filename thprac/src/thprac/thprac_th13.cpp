@@ -499,20 +499,20 @@ namespace TH13 {
         HOTKEY_DEFINE(mMuteki, TH_MUTEKI, "F1", VK_F1)
         PATCH_HK(0x444D7B, "01")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfLives, TH_INFLIVES, "F2", VK_F2)
         PATCH_HK(0x444A52, "eb06")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfBombs, TH_INFBOMBS, "F3", VK_F3)
         PATCH_HK(0x40A402, "6690")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfPower, TH_INFPOWER, "F4", VK_F4)
         PATCH_HK(0x445A2D, "e8")
         HOTKEY_ENDDEF();
-        
-        
+
+
         HOTKEY_DEFINE(mTranceGLock, TH13_TRANCE_LOCK, "F5", VK_F5)
         PATCH_HK(0x43D53D, "6690"), // Prevent trance gain by skipping (mov [esi],eax) which skips the operation for updating the trance gauge.
         PATCH_HK(0x43D507, "6690") // Prevent drain during trance by skipping (dec [esi]) which skips decrementing the trance gauge.
@@ -523,7 +523,7 @@ namespace TH13 {
         PATCH_HK(0x412D36, "eb"),
         PATCH_HK(0x41AABF, "0F1F440000")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mAutoBomb, TH_AUTOBOMB, "F7", VK_F7)
         PATCH_HK(0x443525, "c6")
         HOTKEY_ENDDEF();
@@ -559,7 +559,7 @@ namespace TH13 {
             if (*(int32_t*)(mOptCtx.vpatch_base + 0x16a8c) != FPS) {
                 LARGE_INTEGER PerformanceCount;
                 auto flag = *(uint32_t*)(mOptCtx.vpatch_base + 0x16A88);
-                if (flag > 0x101 || flag < 0x100 && flag - 1 > 2) {
+                if (flag > 0x101 || (flag < 0x100 && flag - 1 > 2)) {
                     *(uint32_t*)(mOptCtx.vpatch_base + 0x18f18) = 0;
                     *(uint32_t*)(mOptCtx.vpatch_base + 0x18f1c) = 0;
                     QueryPerformanceCounter(&PerformanceCount);
@@ -573,9 +573,9 @@ namespace TH13 {
         {
             mOptCtx.fps_replay_fast = 10;
 
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th13.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th13.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th13.dll", hash);
                 if (hash[0] != 6450385832836080372ll || hash[1] != 579365625616419970ll)
@@ -1573,7 +1573,7 @@ namespace TH13 {
 
         ImGui::End();
     }
-    
+
     HOOKSET_DEFINE(THMainHook)
     { .addr = 0x42D3D7, .name = "th13_enter", .callback = tracker_reset, .data = PatchHookImpl(7) },
     { .addr = 0x40A404, .name = "th13_bomb_dec", .callback = th10_tracker_count_bomb, .data = PatchHookImpl(5) },

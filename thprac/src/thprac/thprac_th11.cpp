@@ -9,7 +9,7 @@ namespace TH11 {
         int32_t marisa_b_formation;
     };
     static_assert(offsetof(Player, marisa_b_formation) == 0x8bac);
-    
+
     struct Globals {
         int32_t __field_0;
         int32_t score;
@@ -39,7 +39,7 @@ namespace TH11 {
         int32_t graze;
     };
     static_assert(sizeof(Globals) == 0x78);
-       
+
     #define player (*(Player**)0x4a8eb4)
     Globals* globals = (Globals*)0x4a56e0;
 
@@ -324,11 +324,11 @@ namespace TH11 {
         {
             static char chapterStr[256] {};
             auto& chapterCounts = mChapterSetup[*mStage];
-            
+
             int st = 0;
             if (*mStage == 3) {
-                st = (*mSpellCategory 
-                      ? *mSpellCategory - 1 
+                st = (*mSpellCategory
+                      ? *mSpellCategory - 1
                       : (globals->chara * 3 + globals->subshot)) + 4;
             }
 
@@ -522,22 +522,22 @@ namespace TH11 {
         PATCH_HK(0x431205, "eb"),
         PATCH_HK(0x432ae7, "83c40c9090")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfLives, TH_INFLIVES, "F2", VK_F2)
         PATCH_HK(0x4327EC, "90")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mInfPower, TH_INFPOWER, "F3", VK_F3)
         PATCH_HK(0x4311EB, "eb0a"),
         PATCH_HK(0x431298, "eb09"),
         PATCH_HK(0x4312E0, "0f1f4400")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mTimeLock, TH_TIMELOCK, "F4", VK_F4)
         PATCH_HK(0x40C0DD, "eb"),
         PATCH_HK(0x41278C, "90")
         HOTKEY_ENDDEF();
-        
+
         HOTKEY_DEFINE(mAutoBomb, TH_AUTOBOMB, "F5", VK_F5)
         PATCH_HK(0x431279, "c6")
         HOTKEY_ENDDEF();
@@ -568,9 +568,9 @@ namespace TH11 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
-            } else if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th11.dll")) {
+            } else if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"vpatch_th11.dll"))) {
                 uint64_t hash[2];
                 CalcFileHash(L"vpatch_th11.dll", hash);
                 if (hash[0] != 5913416708557704950ll || hash[1] != 10824003281749047314ll)
@@ -1757,7 +1757,7 @@ namespace TH11 {
     }
 
     constexpr th_glossary_t SHOTTYPE_NAMES[] = {
-        TH_TRACKER_REIMU_YUKARI, 
+        TH_TRACKER_REIMU_YUKARI,
         TH_TRACKER_REIMU_SUIKA,
         TH_TRACKER_REIMU_AYA,
         TH_TRACKER_MARISA_ALICE,
@@ -1770,7 +1770,7 @@ namespace TH11 {
         ImGui::SetNextWindowPos({ 450.0f, 175.0f });
         ImGui::Begin("Tracker", nullptr,
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
-        
+
         auto shottype = globals->chara * 3 + globals->subshot;
 
         char buf[32] = {};
@@ -1961,7 +1961,7 @@ namespace TH11 {
         THGuiRep::singleton().Update();
         THOverlay::singleton().Update();
         bool drawCursor = THAdvOptWnd::StaticUpdate() || THGuiPrac::singleton().IsOpen();
-        
+
         if (tracker_open && player) {
             THTrackerUpdate();
         }

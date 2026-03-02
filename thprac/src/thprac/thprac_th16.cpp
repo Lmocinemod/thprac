@@ -654,7 +654,7 @@ namespace TH16 {
     private:
         void FpsInit()
         {
-            if (mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll")) {
+            if ((mOptCtx.vpatch_base = (uintptr_t)GetModuleHandleW(L"openinputlagpatch.dll"))) {
                 OILPInit(mOptCtx);
             } else if (*(uint8_t*)0x4c12c9 == 3) {
                 mOptCtx.fps_status = 1;
@@ -2148,14 +2148,14 @@ namespace TH16 {
         return signal;
     }
 
-    constexpr th_glossary_t CHARNAMES[] = { 
+    constexpr th_glossary_t CHARNAMES[] = {
         TH_TRACKER_REIMU,
         TH_TRACKER_CIRNO,
         TH_TRACKER_AYA,
         TH_TRACKER_MARISA
     };
     constexpr th_glossary_t SEASONNAMES[] = {
-        TH_TRACKER_SPRING, TH_TRACKER_SUMMER, TH_TRACKER_AUTUMN, 
+        TH_TRACKER_SPRING, TH_TRACKER_SUMMER, TH_TRACKER_AUTUMN,
         TH_TRACKER_WINTER, TH_TRACKER_DOG
     };
 
@@ -2204,7 +2204,7 @@ namespace TH16 {
     { .addr = 0x40DB9C, .name = "th16_bomb_dec", .callback = th10_tracker_count_bomb, .data = PatchHookImpl(5) },
     { .addr = 0x443D3A, .name = "th16_life_dec", .callback = th10_tracker_count_miss, .data = PatchHookImpl(5) },
     { .addr = 0x40DC8A, .name = "th16_release", .callback = th13_tracker_count_trance, .data = PatchHookImpl(10) },
-    
+
     EHOOK_DY(th16_spbugfix, 0x4214fa, 6, {
         char* sub_str;
         int signal;
@@ -2442,12 +2442,12 @@ namespace TH16 {
         THGuiRep::singleton().Update();
         THOverlay::singleton().Update();
         THGuiSP::singleton().Update();
-        
+
         if (tracker_open && GetMemContent(PLAYER_PTR)) {
             THTrackerUpdate();
         }
 
-        bool drawCursor = THAdvOptWnd::StaticUpdate() || THGuiPrac::singleton().IsOpen() || THGuiSP::singleton().IsOpen();      
+        bool drawCursor = THAdvOptWnd::StaticUpdate() || THGuiPrac::singleton().IsOpen() || THGuiSP::singleton().IsOpen();
         GameGuiEnd(drawCursor);
     })
     EHOOK_DY(th16_render, 0x40168a, 1, {
@@ -2480,7 +2480,7 @@ namespace TH16 {
         DWORD oldProtect;
         VirtualProtect((void*)0x493708, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
         *(const char**)(0x493708) = "%s  %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %s %2.1f%%";
-        VirtualProtect((void*)0x493708, 4, oldProtect, &oldProtect); 
+        VirtualProtect((void*)0x493708, 4, oldProtect, &oldProtect);
 
         // Reset thPracParam
         thPracParam.Reset();

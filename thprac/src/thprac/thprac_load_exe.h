@@ -22,11 +22,14 @@ __declspec(align(16)) struct remote_param {
     char sLoadErrDllName[MAX_PATH];
 };
 
+#pragma warning(push)
+#pragma warning(disable:4324)
 __declspec(align(16)) struct remote_init_config {
     bool newProcess = true;
     bool forbidVpatch = false;
     bool forbidOILP = false;
 };
+#pragma warning(pop)
 
 uintptr_t GetProcessModuleBase(HANDLE hProc);
 const THGameVersion* CheckOngoingGameByPID(DWORD pid, uintptr_t* base, HANDLE* pOutHandle);
