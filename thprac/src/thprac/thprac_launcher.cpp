@@ -18,6 +18,8 @@
 #include "thprac_gui_locale.h"
 #include "thprac_gui_input.h"
 
+#include "thprac_launcher_links.h"
+
 #include "../../resource.h"
 
 namespace THPrac {
@@ -182,18 +184,24 @@ void UiUpdate(HWND hwnd) {
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_GAMES))) {
         LauncherGamesMain();
         ImGui::EndTabItem();
+        // LauncherCloseHotkeyRebindListeners();
     }
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_LINKS))) {
-        ImGui::TextUnformatted("Links");
+        LauncherLinksUiUpdate();
         ImGui::EndTabItem();
+        // LauncherCloseHotkeyRebindListeners();
     }
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_TOOLS))) {
+        ImGui::BeginChild("##tools");
         ImGui::TextUnformatted("Tools");
+        ImGui::EndChild();
         ImGui::EndTabItem();
+        // LauncherCloseHotkeyRebindListeners();
     }
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_CONFG))) {
         GuiSettings();
         ImGui::EndTabItem();
+        // LauncherCloseHotkeyRebindListeners();
     }
     ImGui::EndTabBar();
 
