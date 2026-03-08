@@ -1,3 +1,4 @@
+#include "thprac_gui_components.h"
 #include "thprac_gui_locale.h"
 #include "thprac_launcher_links.h"
 #include "thprac_locale_def.h"
@@ -82,14 +83,25 @@ std::wstring LauncherWndFolderSelect(const wchar_t* title = L"Browse for folder.
     [[maybe_unused]] auto silence_warning = title;
     return std::wstring();
 }
+// TODO: This function in particular should go in thprac_gui_components
 // TODO: Probably return an enum instead?
 int GuiCornerButton(const char* text, const char* text_2, const ImVec2& offset, bool use_current_y) {
     // TODO: Actually implement this function
+    // TODO: At least text_2 needs to be safely nullable
     [[maybe_unused]] auto silence_warning_1 = text;
     [[maybe_unused]] auto silence_warning_2 = text_2;
     [[maybe_unused]] auto silence_warning_3 = offset;
     [[maybe_unused]] auto silence_warning_4 = use_current_y;
     return 0;
+}
+// TODO: This function's name is terrible. It should also go in thprac_gui_components
+inline void GuiSetPosYRel(float rel) {
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() * rel);
+}
+// TODO: This should also go in thprac_gui_components
+void GuiColumnText(const char* text) {
+    // TODO: Actually implement this function
+    [[maybe_unused]] auto silence_warning = text;
 }
 } // namespace Utils
 
@@ -103,32 +115,34 @@ struct LinkLeaf : BaseLinkSelectable {
 struct LinkEntry : BaseLinkSelectable {
     std::string name;
     std::vector<LinkLeaf> leaves;
-    bool is_open = false;
+    mutable bool is_open = false;
 };
 
 enum class UiTrigger {
-    TRIGGER_ERROR,
-    ADD_LINK,
-    EDIT_LINK,
-    DELETE_LINK,
-    ADD_FILTER,
-    DELETE_FILTER,
-    ERR_REPEATED,
-    ERR_EXEC,
+    Invalid,
+    AddLink,
+    EditLink,
+    DeleteLink,
+    AddFilter,
+    DeleteFilter,
+    ErrorDuplicate,
+    ErrorExecutable,
 };
 
+// TODO: Remove the magic number hints
 enum class LinkType {
-    Normal,
-    FilePath,
-    FolderPath,
+    Normal, // 0
+    FilePath, // 1
+    FolderPath, // 2
 };
 
+// TODO: Remove the magic number hints
 enum class LinkError {
-    Ok,
-    MissingName,
-    MissingLink,
-    DuplicateName,
-    ReservedName,
+    Ok, // 0
+    MissingName, // 1
+    MissingLink, // 2
+    DuplicateName, // 3
+    ReservedName, // 4
 };
 
 #pragma region GlobalMutableState
@@ -137,15 +151,20 @@ constexpr size_t INPUT_CHARS_MAX = 1024;
 struct THLinksState {
     bool page_initialized = false;
     std::vector<LinkEntry> links;
-    UiTrigger ui_trigger = UiTrigger::TRIGGER_ERROR;
-    BaseLinkSelectable* current_selection = nullptr;
+    UiTrigger ui_trigger = UiTrigger::Invalid;
+    BaseLinkSelectable* selected_link = nullptr;
     size_t current_link = 0;
     size_t current_leaf = 0;
+    // TODO: Don't use -1 to mean "invalid index".
+    // TODO: Why do these need to be global state, anyway?
+    // TODO: Apparently [0] is the index for links, and [1] for leaves?
+    int move_indexes[2] = {-1, -1}; // "moveIdx"
+    int filter_move_index = -1; // "filterMoveIdx"
     // TODO: These aren't properly bounds-checked in several cases. Maybe use strings instead?
-    char input_name[INPUT_CHARS_MAX];
+    char input_link_name[INPUT_CHARS_MAX];
     char input_link[INPUT_CHARS_MAX];
-    char input_link_parameter[INPUT_CHARS_MAX];
-    LinkType input_type = LinkType::Normal;
+    char input_link_parameters[INPUT_CHARS_MAX];
+    LinkType input_link_type = LinkType::Normal;
     LinkError input_error = LinkError::Ok;
 };
 static THLinksState state;
@@ -260,16 +279,17 @@ static void LoadLinksFromLauncherCfg() {
         yyjson_mut_val* leaf_k;
         yyjson_mut_val* leaf_v;
         yyjson_mut_obj_foreach(link_v, idx2, max2, leaf_k, leaf_v) {
-            if (strcmp(yyjson_mut_get_str(leaf_k), "__is_open__") == 0) {
+            bool k_is_is_open = strcmp(yyjson_mut_get_str(leaf_k), "__is_open__") == 0;
+            if (!k_is_is_open && yyjson_mut_is_str(leaf_v)) {
+                LinkLeaf leaf = {
+                    .name = yyjson_mut_get_str(leaf_k),
+                    .link = yyjson_mut_get_str(leaf_v),
+                };
+                link.leaves.push_back(leaf);
+            } else if (k_is_is_open && yyjson_mut_is_bool(leaf_v)) {
                 link.is_open = yyjson_mut_get_bool(leaf_v);
-                continue;
             }
-
-            LinkLeaf leaf = {};
-            leaf.name = yyjson_mut_get_str(leaf_k);
-            // TODO: This will silently produce an empty string for non-string value types.
-            // Is that what we want?
-            leaf.link = yyjson_mut_get_str(leaf_v);
+            // Ignore everything else.
         }
 
         if (filter_state == 1) {
@@ -294,13 +314,13 @@ static std::string WrapLink(const char* link, const char* parameters, LinkType t
     return std::format("\"{}\" {}", link, parameters);
 }
 
-struct LinkResolution {
+struct LinkInfo {
     LinkType type;
     std::string link;
     std::string parameters;
 };
-static LinkResolution ResolveLink(std::string const& link) {
-    LinkResolution result = {};
+static LinkInfo GetLinkInfo(std::string const& link) {
+    LinkInfo result = {};
     size_t first_quote = link.find('"');
     size_t last_quote = link.rfind('"');
     if (
@@ -329,7 +349,7 @@ static LinkResolution ResolveLink(std::string const& link) {
 
 /** Returns `true` on success, `false` otherwise. */
 static bool ExecuteLink(std::string const& link) {
-    auto link_info = ResolveLink(link);
+    auto link_info = GetLinkInfo(link);
     auto link_exec_w = utf8_to_utf16(link_info.link.c_str());
     auto link_parameters_w = utf8_to_utf16(link_info.parameters.c_str());
     HINSTANCE result;
@@ -359,10 +379,10 @@ static bool ExecuteLink(std::string const& link) {
     return ((DWORD)result > 32);
 }
 
-namespace Ui {
-static void EditPopupClear() {
-    state.input_link[0] = state.input_name[0] = state.input_link_parameter[0] = '\0';
-    state.input_type = LinkType::Normal;
+namespace Gui {
+static void ClearEditPopupState() {
+    state.input_link[0] = state.input_link_name[0] = state.input_link_parameters[0] = '\0';
+    state.input_link_type = LinkType::Normal;
     state.input_error = LinkError::Ok;
 }
 
@@ -374,10 +394,13 @@ static void EditPopupShowErrorIfApplicable(LinkError error) {
         break;
     case LinkError::MissingLink:
         error_message = THPRAC_LINKS_EDIT_ERR_LINK;
+        break;
     case LinkError::DuplicateName:
         error_message = THPRAC_LINKS_EDIT_ERR_REPEATED;
+        break;
     case LinkError::ReservedName:
         error_message = THPRAC_LINKS_EDIT_ERR_RSV;
+        break;
     default:
         return;
     }
@@ -391,7 +414,7 @@ static int EditPopupMain() {
     ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##__link_name_input", state.input_name, INPUT_CHARS_MAX)) {
+    if (ImGui::InputText("##__input_link_name", state.input_link_name, INPUT_CHARS_MAX)) {
         if (
             state.input_error == LinkError::MissingName
             || state.input_error == LinkError::DuplicateName
@@ -403,8 +426,8 @@ static int EditPopupMain() {
     ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_LINK));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
-    if (state.input_type == LinkType::Normal) {
-        if (ImGui::InputText("##__link_input", state.input_link, INPUT_CHARS_MAX)) {
+    if (state.input_link_type == LinkType::Normal) {
+        if (ImGui::InputText("##__input_link", state.input_link, INPUT_CHARS_MAX)) {
             if (state.input_error == LinkError::MissingLink) {
                 state.input_error = LinkError::Ok;
             }
@@ -412,11 +435,11 @@ static int EditPopupMain() {
     } else {
         ImGui::TextUnformatted(state.input_link);
     }
-    if (LinkIsExecutable(state.input_link, state.input_type)) {
+    if (LinkIsExecutable(state.input_link, state.input_link_type)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_PARAM));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputText("##__link_parameter_input", state.input_link_parameter, INPUT_CHARS_MAX);
+        ImGui::InputText("##__input_link_parameters", state.input_link_parameters, INPUT_CHARS_MAX);
     }
 
     EditPopupShowErrorIfApplicable(state.input_error);
@@ -425,8 +448,8 @@ static int EditPopupMain() {
         auto file_str = Utils::LauncherWndFileSelect();
         if (file_str.length() > 0) {
             state.input_error = LinkError::Ok;
-            state.input_type = LinkType::FilePath;
-            state.input_link_parameter[0] = '\0';
+            state.input_link_type = LinkType::FilePath;
+            state.input_link_parameters[0] = '\0';
             sprintf_s(state.input_link, "%s", utf16_to_utf8(file_str.c_str()).c_str());
         }
     }
@@ -435,7 +458,7 @@ static int EditPopupMain() {
         auto folder_str = Utils::LauncherWndFolderSelect();
         if (folder_str.length() > 0) {
             state.input_error = LinkError::Ok;
-            state.input_type = LinkType::FolderPath;
+            state.input_link_type = LinkType::FolderPath;
             sprintf_s(state.input_link, "%s", utf16_to_utf8(folder_str.c_str()).c_str());
         }
     }
@@ -443,22 +466,22 @@ static int EditPopupMain() {
     if (ImGui::Button(S(THPRAC_LINKS_EDIT_INPUT))) {
         state.input_error = LinkError::Ok;
         state.input_link[0] = '\0';
-        state.input_type = LinkType::Normal;
+        state.input_link_type = LinkType::Normal;
     }
     ImGui::SameLine();
 
     // Another magic number...
     auto result = Utils::GuiCornerButton(S(THPRAC_OK), S(THPRAC_CANCEL), ImVec2(1.0f, 0.0f), true);
     if (result == 1) {
-        if (strnlen_s(state.input_name, INPUT_CHARS_MAX) == 0) {
+        if (strnlen_s(state.input_link_name, INPUT_CHARS_MAX) == 0) {
             state.input_error = LinkError::MissingName;
         } else if (strnlen_s(state.input_link, INPUT_CHARS_MAX)) {
             state.input_error = LinkError::MissingLink;
-        } else if (strcmp(state.input_name, "__is_open__") == 0) {
+        } else if (strcmp(state.input_link_name, "__is_open__") == 0) {
             state.input_error = LinkError::ReservedName;
         } else {
             for (auto const& leaf : state.links[state.current_link].leaves) {
-                if (leaf.name == state.input_name) {
+                if (leaf.name == state.input_link_name) {
                     state.input_error = LinkError::DuplicateName;
                     break;
                 }
@@ -472,25 +495,434 @@ static int EditPopupMain() {
 }
 
 static void ContextMenuUpdate() {
-    // TODO: Actually implement this function
+    th_glossary_t popup_str_id = A0000ERROR_C;
+    switch (state.ui_trigger) {
+    case UiTrigger::AddLink:
+        ClearEditPopupState();
+        popup_str_id = THPRAC_LINKS_ADD;
+        break;
+    case UiTrigger::EditLink:
+        ClearEditPopupState();
+        {
+            auto& leaf = state.links[state.current_link].leaves[state.current_leaf];
+            auto info = GetLinkInfo(leaf.link);
+            state.input_link_type = info.type;
+            strcpy_s(state.input_link_name, leaf.name.c_str());
+            strcpy_s(state.input_link, info.link.c_str());
+            strcpy_s(state.input_link_parameters, info.parameters.c_str());
+        }
+        popup_str_id = THPRAC_LINKS_EDIT;
+        break;
+    case UiTrigger::DeleteLink:
+        popup_str_id = THPRAC_LINKS_DELETE_MODAL;
+        break;
+    case UiTrigger::AddFilter:
+        ClearEditPopupState();
+        popup_str_id = THPRAC_LINKS_FILTER_ADD_MODAL;
+        break;
+    case UiTrigger::DeleteFilter:
+        popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
+        break;
+    case UiTrigger::ErrorDuplicate:
+        popup_str_id = THPRAC_LINKS_ERR_MOVE_MODAL;
+        break;
+    case UiTrigger::ErrorExecutable:
+        popup_str_id = THPRAC_LINKS_ERR_EXEC_MODAL;
+        break;
+    default:
+        break;
+    }
+
+    if (popup_str_id != A0000ERROR_C) {
+        ImGui::OpenPopup(S(popup_str_id));
+    }
+    state.ui_trigger = UiTrigger::Invalid;
+
+    // TODO: The bodies of these if statements should probably be their own functions.
+    auto modal_size_rel = ImVec2(ImGui::GetIO().DisplaySize.x * 0.9f, 0.0f);
+    if (Modal(S(THPRAC_LINKS_ADD), modal_size_rel)) {
+        auto result = EditPopupMain();
+        if (result != 0) {
+            if (result == 1) {
+                auto final_link = WrapLink(
+                    state.input_link,
+                    state.input_link_parameters,
+                    state.input_link_type
+                );
+                LinkLeaf new_leaf = {
+                    .name = state.input_link_name,
+                    .link = final_link,
+                };
+
+                size_t insert_i = 0;
+                if (state.selected_link != nullptr) {
+                    insert_i = state.current_leaf;
+                }
+                auto& current_link = state.links[state.current_link];
+                current_link.leaves.insert(current_link.leaves.begin() + (int)insert_i, new_leaf);
+                state.current_leaf = insert_i;
+                state.selected_link = nullptr;
+                WriteLinksToLauncherCfg();
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(S(THPRAC_LINKS_EDIT), modal_size_rel)) {
+        auto result = EditPopupMain();
+        if (result != 0) {
+            if (result == 1) {
+                auto final_link = WrapLink(
+                    state.input_link,
+                    state.input_link_parameters,
+                    state.input_link_type
+                );
+                auto& leaf_to_edit = state.links[state.current_leaf].leaves[state.current_leaf];
+                leaf_to_edit.name = state.input_link_name;
+                leaf_to_edit.link = final_link;
+                WriteLinksToLauncherCfg();
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(S(THPRAC_LINKS_DELETE_MODAL) /* (Default size) */)) {
+        ImGui::TextUnformatted(S(THPRAC_LINKS_DELETE_WARNING));
+        if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
+            auto& current_link = state.links[state.current_link];
+            current_link.leaves.erase(current_link.leaves.begin() + (int)state.current_leaf);
+            state.selected_link = nullptr;
+            WriteLinksToLauncherCfg();
+        }
+        ImGui::EndPopup();
+    }
+
+    modal_size_rel = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, 0.0f);
+    if (Modal(S(THPRAC_LINKS_FILTER_ADD_MODAL), modal_size_rel)) {
+        ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::InputText("##__input_link_name", state.input_link_name, INPUT_CHARS_MAX)) {
+            if (
+                state.input_error == LinkError::MissingName
+                || state.input_error == LinkError::DuplicateName
+            ) {
+                state.input_error = LinkError::Ok;
+            }
+        }
+        EditPopupShowErrorIfApplicable(state.input_error);
+
+        auto result = Utils::GuiCornerButton(
+            S(THPRAC_OK),
+            S(THPRAC_CANCEL),
+            ImVec2(1.0f, 0.0f),
+            true
+        );
+        if (result == 1) {
+            if (strnlen_s(state.input_link_name, INPUT_CHARS_MAX) == 0) {
+                state.input_error = LinkError::MissingName;
+            } else for (auto const& link : state.links) {
+                if (link.name == state.input_link_name) {
+                    state.input_error = LinkError::DuplicateName;
+                    break;
+                }
+            }
+            if (state.input_error == LinkError::Ok) {
+                LinkEntry new_link = {
+                    .name = state.input_link_name,
+                    // .links = (default)
+                    .is_open = true,
+                };
+                state.links.insert(state.links.begin() + (int)state.current_link, new_link);
+                WriteLinksToLauncherCfg();
+                ImGui::CloseCurrentPopup();
+            }
+        } else if (result == 2) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(S(THPRAC_LINKS_FILTER_DEL_MODAL) /* (Default size) */)) {
+        ImGui::TextUnformatted(S(THPRAC_LINKS_FILTER_DELETE_WARNING));
+        if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
+            state.links.erase(state.links.begin() + (int)state.current_link);
+            state.selected_link = nullptr;
+            WriteLinksToLauncherCfg();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(S(THPRAC_LINKS_ERR_MOVE_MODAL) /* (Default size) */)) {
+        ImGui::TextUnformatted(S(THPRAC_LINKS_ERR_MOVE));
+        if (Utils::GuiCornerButton(S(THPRAC_OK), nullptr, ImVec2(1.0f, 0.0f), true)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(S(THPRAC_LINKS_ERR_EXEC_MODAL) /* (Default size) */)) {
+        ImGui::TextUnformatted(S(THPRAC_LINKS_ERR_EXEC));
+        if (Utils::GuiCornerButton(S(THPRAC_OK), nullptr, ImVec2(1.0f, 0.0f), true)) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
+// TODO: Is "main" really the right name for what this does?
+// TODO: Have this take an enum instead of a magic number
 static bool PopupContextMenuMain(int type) {
-    // TODO: Actually implement this function
-    [[maybe_unused]] auto silence_warning = type;
-    return false;
-}
-} // namespace Ui
+    if (type == 1 || type == 2) {
+        if (!ImGui::BeginPopupContextItem()) {
+            return false;
+        }
 
+        if (type == 2) {
+            if (ImGui::Selectable(S(THPRAC_LINKS_EDIT))) {
+                state.ui_trigger = UiTrigger::EditLink;
+            }
+            if (ImGui::Selectable(S(THPRAC_LINKS_DELETE))) {
+                state.ui_trigger = UiTrigger::DeleteLink;
+            }
+            ImGui::Separator();
+        } else /* type == 1 */ {
+            if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_DEL))) {
+                state.ui_trigger = UiTrigger::DeleteFilter;
+            }
+        }
+
+        if (ImGui::Selectable(S(THPRAC_LINKS_ADD))) {
+            state.ui_trigger = UiTrigger::AddLink;
+        }
+        ImGui::Separator();
+        if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
+            state.ui_trigger = UiTrigger::AddFilter;
+        }
+        ImGui::EndPopup();
+        return true;
+    } else /* type == 0 */ {
+        if (!ImGui::BeginPopupContextWindow()) {
+            return false;
+        }
+        if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
+            state.ui_trigger = UiTrigger::AddFilter;
+        }
+        if (state.links.size() == 0) {
+            if (ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
+                WriteDefaultLinksToLauncherCfg();
+                LoadLinksFromLauncherCfg();
+            }
+        }
+        ImGui::EndPopup();
+        return true;
+    }
+}
+} // namespace Gui
+
+// TODO: Rename this function to match the other pages' convention.
 void LauncherLinksUiUpdate() {
-    // TODO: Actually implement this function
     if (!state.page_initialized) [[unlikely]] {
         LoadLinksFromLauncherCfg();
         state.page_initialized = true;
     }
 
     ImGui::BeginChild("##links");
-    ImGui::TextUnformatted("Links");
-    ImGui::EndChild();
+    defer(ImGui::EndChild());
+
+    // TODO: Don't use -1 to mean "invalid index".
+    // TODO: Apparently [0] is the index for links, and [1] for leaves?
+    int move_destination_indexes[2] = {-1, -1}; // "destIdx"
+    int filter_destination_index = -1; // "filterDestIdx"
+
+    // TODO: What the heck does "type 0" mean?
+    if (Gui::PopupContextMenuMain(0)) {
+        state.selected_link = nullptr;
+        state.current_link = state.links.size(); // TODO: Invalid, but not obviously so. Why?
+    }
+    if (state.links.size() == 0) {
+        Utils::GuiSetPosYRel(0.5f);
+        Gui::TextCentered(S(THPRAC_GAMES_MISSING), ImGui::GetWindowWidth());
+        return;
+    }
+    ImGui::Columns(2, "##@__col_links", true, true);
+
+    for (size_t links_i = 0; links_i < state.links.size(); links_i++) {
+        auto const& link = state.links[links_i];
+
+        ImGui::SetNextItemOpen(link.is_open, ImGuiCond_FirstUseEver);
+        auto link_flags = (state.selected_link == &link)
+            ? ImGuiTreeNodeFlags_Selected
+            : ImGuiTreeNodeFlags_None;
+        auto link_is_open = ImGui::TreeNodeEx(link.name.c_str(), link_flags);
+        if (ImGui::BeginDragDropSource()) {
+            state.filter_move_index = (int)links_i;
+            ImGui::SetDragDropPayload(
+                "##@__dnd_link_filter",
+                &state.move_indexes, // ???
+                sizeof(state.move_indexes)
+            );
+            ImGui::EndDragDropSource();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            auto payload = ImGui::AcceptDragDropPayload("##__dnd_link_filter");
+            if (payload != nullptr) {
+                filter_destination_index = (int)links_i;
+            }
+            ImGui::EndDragDropTarget();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_leaf");
+            if (payload != nullptr) {
+                move_destination_indexes[0] = (int)links_i;
+                move_destination_indexes[1] = 0;
+            }
+            ImGui::EndDragDropTarget();
+        }
+
+        // TODO: What the heck does "type 1" mean?
+        if (Gui::PopupContextMenuMain(1)) {
+            // TODO: This pointer cast is UGLY. There has GOT to be a better way to do this.
+            state.selected_link = (BaseLinkSelectable*)&link;
+            state.current_link = links_i;
+        } else if (state.selected_link == &link) {
+            state.selected_link = nullptr;
+        }
+        ImGui::NextColumn();
+        ImGui::NextColumn();
+
+        // TODO: Maybe extract this into its own function?
+        if (link_is_open) {
+            for (size_t leaves_i = 0; leaves_i < link.leaves.size(); leaves_i++) {
+                auto const& leaf = link.leaves[leaves_i];
+
+                auto leaf_flags = ImGuiTreeNodeFlags_Leaf
+                    | ImGuiTreeNodeFlags_NoTreePushOnOpen
+                    | ImGuiTreeNodeFlags_SpanAvailWidth;
+                if (state.selected_link == &leaf) {
+                    leaf_flags |= ImGuiTreeNodeFlags_Selected;
+                }
+                ImGui::TreeNodeEx((void*)(intptr_t)leaves_i, leaf_flags, "%s", leaf.name.c_str());
+
+                if (ImGui::IsItemHovered()) {
+                    auto SelectCurrentLeaf = [&]() {
+                        // TODO: Another ugly pointer cast...
+                        state.selected_link = (BaseLinkSelectable*)&leaf;
+                        state.current_link = links_i;
+                        state.current_leaf = leaves_i;
+                    };
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        SelectCurrentLeaf();
+                        if (!ExecuteLink(leaf.link)) {
+                            state.ui_trigger = UiTrigger::ErrorExecutable;
+                        }
+                    } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        SelectCurrentLeaf();
+                    }
+                }
+
+                if (ImGui::BeginDragDropSource()) {
+                    state.move_indexes[0] = (int)links_i;
+                    state.move_indexes[1] = (int)leaves_i;
+                    ImGui::SetDragDropPayload(
+                        "##@__dnd_link_leaf",
+                        &state.move_indexes, // ???
+                        sizeof(state.move_indexes)
+                    );
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_leaf");
+                    if (payload != nullptr) {
+                        move_destination_indexes[0] = (int)links_i;
+                        move_destination_indexes[1] = (int)leaves_i;
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
+                // TODO: What the heck does "type 2" mean?
+                if (Gui::PopupContextMenuMain(2)) {
+                    // TODO: Another ugly pointer cast...
+                    state.selected_link = (BaseLinkSelectable*)&leaf;
+                    state.current_link = links_i;
+                    state.current_leaf = leaves_i;
+                }
+
+                ImGui::NextColumn();
+                Utils::GuiColumnText(leaf.link.c_str());
+                ImGui::NextColumn();
+            }
+            ImGui::TreePop();
+        }
+
+        if (link.is_open != link_is_open) {
+            link.is_open = link_is_open; // This is why .is_open is mutable
+            WriteLinksToLauncherCfg();
+            state.selected_link = nullptr;
+        }
+    }
+
+    ImGui::Columns(1);
+
+    // TODO: It looks like these conditionals are where the actual swapping happens. Maybe extract
+    // these into functions? (Also, this first one can probably be a rotate instead.)
+    if (filter_destination_index >= 0) {
+        auto link_temp = state.links[(size_t)state.filter_move_index];
+        if (filter_destination_index > state.filter_move_index) {
+            state.links.insert(state.links.begin() + filter_destination_index + 1, link_temp);
+            state.links.erase(state.links.begin() + state.filter_move_index);
+        } else if (filter_destination_index < state.filter_move_index) {
+            state.links.insert(state.links.begin() + filter_destination_index, link_temp);
+            state.links.erase(state.links.begin() + state.filter_move_index + 1);
+        }
+
+        state.current_link = (size_t)filter_destination_index;
+        state.selected_link = nullptr;
+        WriteLinksToLauncherCfg();
+    }
+
+    if (move_destination_indexes[0] >= 0 && move_destination_indexes[1] >= 0) {
+        // TODO: This is gross.
+        auto leaf_temp = state.links[
+            (size_t)state.move_indexes[0]
+        ].leaves[
+            (size_t)state.move_indexes[1]
+        ];
+        auto& source_leaves = state.links[(size_t)state.move_indexes[0]].leaves;
+        auto& destination_leaves = state.links[(size_t)move_destination_indexes[0]].leaves;
+
+        if (state.move_indexes[0] != move_destination_indexes[0]) {
+            for (auto& leaf : destination_leaves) {
+                if (leaf.name == leaf_temp.name) {
+                    state.ui_trigger = UiTrigger::ErrorDuplicate;
+                    break;
+                }
+            }
+        }
+
+        if (state.ui_trigger != UiTrigger::ErrorDuplicate) {
+            if (state.move_indexes[0] == move_destination_indexes[0]) {
+                // Source and destination links are the same
+                if (move_destination_indexes[1] > state.move_indexes[1]) {
+                    destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1] + 1, leaf_temp);
+                    source_leaves.erase(source_leaves.begin() + state.move_indexes[1]);
+                } else {
+                    destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1], leaf_temp);
+                    source_leaves.erase(source_leaves.begin() + state.move_indexes[1] + 1);
+                }
+            } else {
+                // Source and destination links are different
+                destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1], leaf_temp);
+                source_leaves.erase(source_leaves.begin() + state.move_indexes[1]);
+            }
+            state.current_link = (size_t)move_destination_indexes[0];
+            state.current_leaf = (size_t)move_destination_indexes[1];
+            state.selected_link = &destination_leaves[(size_t)move_destination_indexes[1]];
+        }
+    }
+
+    Gui::ContextMenuUpdate();
 }
 } // namespace THPrac
