@@ -704,6 +704,8 @@ namespace THPrac
             if (sizeRel.x != 0.0f || sizeRel.y != 0.0f) {
                 ImGui::SetNextWindowSize(sizeRel, ImGuiCond_Always);
             }
+            // TODO: Preventing the user from moving the window can softlock them if the popup's
+            // OK/Cancel buttons are off-screen.
             return ImGui::BeginPopupModal(modalTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove);
         }
         bool YesNoChoice(const char* buttonText1, const char* buttonText2, float buttonSize)
