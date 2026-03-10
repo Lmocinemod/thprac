@@ -1,3 +1,4 @@
+#include "thprac_cfg.h"
 #include "thprac_gui_components.h"
 #include "thprac_gui_locale.h"
 #include "thprac_launcher_links.h"
@@ -18,18 +19,6 @@
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
 namespace Utils {
-// TODO: Maybe it'd be better for thprac to keep its launcher config document in memory,
-// and then have this function return only a reference to it? That way we're not needlessly
-// re-parsing the same JSON file over and over.
-static yyjson_mut_doc* LoadLauncherCfg() {
-    // TODO: Actually implement this function
-    // TODO: This function must never return on failure
-    return yyjson_mut_doc_new(nullptr);
-}
-static void SaveLauncherCfg(yyjson_mut_doc* doc) {
-    // TODO: Actually implement this function
-    [[maybe_unused]] auto silence_warning = doc;
-}
 std::optional<int> GetLauncherSetting(const char* name) {
     // TODO: Actually implement this function
     [[maybe_unused]] auto silence_warning = name;
@@ -83,16 +72,51 @@ std::wstring LauncherWndFolderSelect(const wchar_t* title = L"Browse for folder.
     [[maybe_unused]] auto silence_warning = title;
     return std::wstring();
 }
+enum class ButtonResult {
+    NonePressed,
+    LeftPressed,
+    RightPressed,
+};
 // TODO: This function in particular should go in thprac_gui_components
-// TODO: Probably return an enum instead?
-int GuiCornerButton(const char* text, const char* text_2, const ImVec2& offset, bool use_current_y) {
-    // TODO: Actually implement this function
-    // TODO: At least text_2 needs to be safely nullable
-    [[maybe_unused]] auto silence_warning_1 = text;
-    [[maybe_unused]] auto silence_warning_2 = text_2;
-    [[maybe_unused]] auto silence_warning_3 = offset;
-    [[maybe_unused]] auto silence_warning_4 = use_current_y;
-    return 0;
+// TODO: Maybe overload this for the single-button use case?
+ButtonResult GuiCornerButtons(
+    const char* left_button_text,
+    const char* optional_right_button_text,
+    ImVec2 offset, // TODO: Why was this originally passed by const-reference? Is there some reason?
+    bool use_current_y
+) {
+    auto const& style = ImGui::GetStyle();
+    auto font_size = ImGui::GetFontSize();
+
+    auto text_size_left = ImGui::CalcTextSize(left_button_text);
+    auto text_size_right = optional_right_button_text != nullptr
+        ? ImGui::CalcTextSize(optional_right_button_text)
+        : ImVec2(0.0f, font_size);
+
+    auto cursor = ImGui::GetWindowSize();
+    cursor.x -= text_size_left.x - (offset.x * font_size);
+    if (optional_right_button_text != nullptr) {
+        cursor.x -= (style.FramePadding.x * 2 + style.ItemSpacing.x + text_size_right.x);
+    }
+
+    auto current_cursor_y = ImGui::GetCursorPosY();
+    auto text_height = std::max(text_size_left.y, text_size_right.y);
+    cursor.y -= text_height - (offset.y * font_size);
+    if (use_current_y || cursor.y < current_cursor_y) {
+        cursor.y = current_cursor_y;
+    }
+
+    ImGui::SetCursorPos(cursor);
+    if (ImGui::Button(left_button_text)) {
+        return ButtonResult::LeftPressed;
+    }
+    if (optional_right_button_text != nullptr) {
+        ImGui::SameLine();
+        if (ImGui::Button(optional_right_button_text)) {
+            return ButtonResult::RightPressed;
+        }
+    }
+    return ButtonResult::NonePressed;
 }
 // TODO: This function's name is terrible. It should also go in thprac_gui_components
 inline void GuiSetPosYRel(float rel) {
@@ -100,8 +124,18 @@ inline void GuiSetPosYRel(float rel) {
 }
 // TODO: This should also go in thprac_gui_components
 void GuiColumnText(const char* text) {
-    // TODO: Actually implement this function
-    [[maybe_unused]] auto silence_warning = text;
+    auto column_width = ImGui::GetColumnWidth();
+    auto text_width = ImGui::CalcTextSize(text).x + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::TextUnformatted(text);
+    if (!ImGui::IsItemHovered() || text_width <= column_width) {
+        return;
+    }
+
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetIO().DisplaySize.x * 0.9f);
+    ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
 }
 } // namespace Utils
 
@@ -160,7 +194,8 @@ struct THLinksState {
     // TODO: Apparently [0] is the index for links, and [1] for leaves?
     int move_indexes[2] = {-1, -1}; // "moveIdx"
     int filter_move_index = -1; // "filterMoveIdx"
-    // TODO: These aren't properly bounds-checked in several cases. Maybe use strings instead?
+    // TODO: These aren't properly bounds-checked in several cases. Maybe use strings/arrays instead?
+    // (Maybe also move all the input_* stuff into a sub-struct, which could then have a Reset method.)
     char input_link_name[INPUT_CHARS_MAX];
     char input_link[INPUT_CHARS_MAX];
     char input_link_parameters[INPUT_CHARS_MAX];
@@ -171,136 +206,222 @@ static THLinksState state;
 
 #pragma endregion // GlobalMutableState
 
+// TODO: Either remove this function, or replace it with something better.
+static void Debug(const char* message, bool is_error = false) {
+    if (is_error) {
+        fprintf(stderr, "ERROR: %s\n", message);
+    } else {
+        fprintf(stderr, "INFO: %s\n", message);
+    }
+
+    constexpr auto LP_CLASS_NAME = L"thprac launcher window";
+    // This should always be non-null, since we can't make it here without a window being spawned.
+    // But even if it does somehow end up null, it just means the MessageBox will have no parent.
+    HWND hWnd = FindWindowW(LP_CLASS_NAME, nullptr);
+    UINT uType = is_error ? MB_ICONERROR : MB_ICONINFORMATION;
+    MessageBoxA(hWnd, message, "DEBUG", uType);
+}
+
 // TODO: Probably handle errors more gracefully... or something?
-[[noreturn]] void PanicOutOfMemory() {
-    fputs("Out of memory (probably)", stderr);
+[[noreturn]] static void PanicOutOfMemory() {
+    Debug("Out of memory (probably)", true);
     exit(EXIT_FAILURE);
 }
 
-static void ReplaceLinksInLauncherCfg(yyjson_mut_val* links_val) {
-    auto cfg_doc = Utils::LoadLauncherCfg();
-    defer(yyjson_mut_doc_free(cfg_doc));
-    auto cfg = yyjson_mut_doc_get_root(cfg_doc);
+namespace Json {
+constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
+constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END;
 
-    auto cfg_links = yyjson_mut_obj_get(cfg, "links");
-    if (cfg_links) {
-        yyjson_mut_obj_remove(cfg, cfg_links);
+constexpr auto KEY_DEFAULT = "Default";
+constexpr auto KEY_IS_OPEN = "__is_open__";
+
+constexpr size_t N_DEFAULT_LINK_LEAVES = 8;
+constexpr const char* DEFAULT_LINK_LEAVES[N_DEFAULT_LINK_LEAVES][2] = {
+    {"Royalflare Archive", "https://maribelhearn.com/royalflare"},
+    {"Lunarcast", "http://replay.lunarcast.net/"},
+    {"PND's Scoreboard", "https://thscore.pndsng.com/index.php"},
+    {"Maribel Hearn's Touhou Portal", "https://maribelhearn.com/"},
+    {"Touhou Patch Center", "https://www.thpatch.net/"},
+    {"Touhou Replay Showcase", "https://twitch.tv/touhou_replay_showcase"},
+    {"甜品站 (isndes)", "https://www.isndes.com/"},
+    {"THBWiki", "https://thwiki.cc/"}
+};
+
+static const std::wstring& GetLinksJsonFilePath() {
+    static std::wstring path;
+    if (path.size() > 0) [[likely]] {
+        return path;
     }
-    yyjson_mut_obj_add_val(cfg_doc, cfg, "links", links_val);
-    Utils::SaveLauncherCfg(cfg_doc);
+
+    path.reserve(_gConfigDirLen + JSON_FILENAME.size());
+    path.append(_gConfigDir);
+    path.append(JSON_FILENAME);
+    return path;
 }
 
-static void WriteLinksToLauncherCfg() {
-    auto links_doc = yyjson_mut_doc_new(nullptr);
-    if (links_doc == nullptr) {
+std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
+    auto doc = yyjson_mut_doc_new(nullptr);
+    if (doc == nullptr) {
         PanicOutOfMemory();
     }
-    defer(yyjson_mut_doc_free(links_doc));
-    auto links_obj = yyjson_mut_obj(links_doc);
-    yyjson_mut_doc_set_root(links_doc, links_obj);
+    auto root = yyjson_mut_obj(doc);
+    if (root == nullptr) {
+        PanicOutOfMemory();
+    }
+    yyjson_mut_doc_set_root(doc, root);
+    return std::pair(doc, root);
+}
 
-    for (auto const& current_link : state.links) {
-        auto current_link_obj = yyjson_mut_obj(links_doc);
-        yyjson_mut_obj_add_bool(links_doc, current_link_obj, "__is_open__", current_link.is_open);
-        for (auto const& leaf : current_link.leaves) {
-            yyjson_mut_obj_add_str(
-                links_doc,
-                current_link_obj,
-                leaf.name.c_str(),
-                leaf.link.c_str()
-            );
+static void WriteJsonDocToLinksJson(yyjson_mut_doc* doc) {
+    FILE* f;
+    auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"wb");
+    if (io_error != NULL) {
+        // TODO: Probably have some kind of retry behavior?
+        auto message = std::format("Failed to open links.json for editing. Error code: {}", io_error);
+        Debug(message.c_str(), true);
+    }
+    defer(fclose(f));
+
+    yyjson_write_err write_err;
+    yyjson_mut_write_fp(f, doc, JSON_WRITE_FLAGS, nullptr, &write_err);
+    if (write_err.code != YYJSON_WRITE_SUCCESS) {
+        // TODO: Probably have some kind of retry behavior?
+        auto message = std::format("Failed to save links to links.json: {}", write_err.msg);
+        Debug(message.c_str(), true);
+    }
+}
+
+static void SaveLinksJson() {
+    auto [doc, root] = NewJsonDoc();
+    defer(yyjson_mut_doc_free(doc));
+
+    for (auto const& link : state.links) {
+        auto link_obj = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, link_obj, KEY_IS_OPEN, link.is_open);
+        for (auto const& leaf : link.leaves) {
+            yyjson_mut_obj_add_str(doc, link_obj, leaf.name.c_str(), leaf.link.c_str());
         }
-
-        yyjson_mut_obj_add_val(links_doc, links_obj, current_link.name.c_str(), current_link_obj);
+        yyjson_mut_obj_add_val(doc, root, link.name.c_str(), link_obj);
     }
 
-    ReplaceLinksInLauncherCfg(links_obj);
+    WriteJsonDocToLinksJson(doc);
 }
 
-constexpr auto DEFAULT_LINKS_JSON_STR = std::string_view(R"123({
-    "Default":{
-        "__is_open__" : true,
-        "Royalflare Archive":"https://maribelhearn.com/royalflare",
-        "Lunarcast":"http://replay.lunarcast.net/",
-        "PND's Scoreboard":"https://thscore.pndsng.com/index.php",
-        "Maribel Hearn's Touhou Portal":"https://maribelhearn.com/",
-        "Touhou Patch Center":"https://www.thpatch.net/",
-        "Touhou Replay Showcase":"https://twitch.tv/touhou_replay_showcase",
-        "甜品站 (isndes)":"https://www.isndes.com/",
-        "THBWiki":"https://thwiki.cc/"
-    }
-})123");
-static void WriteDefaultLinksToLauncherCfg() {
-    auto links_doc_immutable = yyjson_read(
-        DEFAULT_LINKS_JSON_STR.data(),
-        DEFAULT_LINKS_JSON_STR.length(),
-        YYJSON_READ_NOFLAG
-    );
-    if (links_doc_immutable == nullptr) {
-        PanicOutOfMemory();
-    }
-    defer(yyjson_doc_free(links_doc_immutable));
-    auto links_doc = yyjson_doc_mut_copy(links_doc_immutable, nullptr);
-    if (links_doc == nullptr) {
-        PanicOutOfMemory();
-    }
-    defer(yyjson_mut_doc_free(links_doc));
-    auto links = yyjson_mut_doc_get_root(links_doc);
+static void ResetLinksJsonToDefault() {
+    auto [doc, root] = NewJsonDoc();
+    defer(yyjson_mut_doc_free(doc));
 
-    ReplaceLinksInLauncherCfg(links);
+    auto default_ = yyjson_mut_obj(doc);
+    if (default_ == nullptr) {
+        PanicOutOfMemory();
+    }
+    yyjson_mut_obj_add_bool(doc, default_, KEY_IS_OPEN, true);
+    for (size_t i = 0; i < N_DEFAULT_LINK_LEAVES; i++) {
+        auto [k, v] = DEFAULT_LINK_LEAVES[i];
+        yyjson_mut_obj_add_str(doc, default_, k, v);
+    }
+    yyjson_mut_obj_add_val(doc, root, KEY_DEFAULT, default_);
+
+    WriteJsonDocToLinksJson(doc);
 }
 
-static void LoadLinksFromLauncherCfg() {
+static void LoadDefaultLinks() {
+    state = {};
+    std::vector<LinkLeaf> leaves;
+    leaves.reserve(sizeof(LinkLeaf) * N_DEFAULT_LINK_LEAVES);
+    for (size_t i = 0; i < N_DEFAULT_LINK_LEAVES; i++) {
+        auto [name, link] = DEFAULT_LINK_LEAVES[i];
+        leaves.push_back(LinkLeaf {
+            .name = name,
+            .link = link,
+        });
+    }
+    state.links.push_back(LinkEntry {
+        .name = KEY_DEFAULT,
+        .leaves = std::move(leaves),
+        .is_open = true,
+    });
+}
+
+static void LoadLinksJson() {
     // TODO: Turn this magic number into an enum if possible.
     int filter_state = Utils::GetLauncherSetting("filter_default").value();
 
-    auto cfg_doc = Utils::LoadLauncherCfg();
-    defer(yyjson_mut_doc_free(cfg_doc));
-    auto cfg = yyjson_mut_doc_get_root(cfg_doc);
+    FILE* f;
+    auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"rb");
+    if (io_error != NULL) {
+        if (io_error == ERROR_FILE_NOT_FOUND) {
+            // JSON file doesn't exist, so create it.
+            ResetLinksJsonToDefault();
+            LoadDefaultLinks();
+            return;
+        }
 
-    auto links_obj = yyjson_mut_obj_get(cfg, "links");
-    if (links_obj == nullptr) {
-        // cfg["links"] either doesn't exist or is not an object.
-        WriteDefaultLinksToLauncherCfg();
-        return;
+        // TODO: Probably have some kind of retry behavior?
+        auto message = std::format(
+            "FATAL: Failed to open links.json for reading. Error code: {}",
+            io_error
+        );
+        Debug(message.c_str(), true);
+        exit(EXIT_FAILURE);
     }
+    defer(fclose(f));
 
-    size_t idx1, max1;
-    yyjson_mut_val* link_k;
-    yyjson_mut_val* link_v;
-    yyjson_mut_obj_foreach(links_obj, idx1, max1, link_k, link_v) {
-        if (yyjson_mut_get_type(link_v) != YYJSON_TYPE_OBJ) {
+    yyjson_read_err read_err;
+    yyjson_read_flag flags = 0;
+    auto doc = yyjson_read_fp(f, flags, nullptr, &read_err);
+    if (read_err.code != YYJSON_READ_SUCCESS) {
+        // TODO: Probably warn the user that the file is corrupt or something instead? And then do
+        // retry behavior (or give the option to just exit).
+        auto message = std::format(
+            "FATAL: Failed to read links from links.json: {}, code {}, pos {}",
+            read_err.msg, read_err.code, read_err.pos
+        );
+        Debug(message.c_str(), true);
+        exit(EXIT_FAILURE);
+    }
+    defer(yyjson_doc_free(doc));
+    auto root = yyjson_doc_get_root(doc); // Will never return nullptr
+
+    size_t link_i, link_max;
+    yyjson_val* link_k;
+    yyjson_val* link_v;
+    yyjson_obj_foreach(root, link_i, link_max, link_k, link_v) {
+        if (yyjson_get_type(link_v) != YYJSON_TYPE_OBJ) {
+            // Ignore non-object values.
+            // TODO: Should a warning be displayed here?
             continue;
         }
         LinkEntry link = {};
-        link.name = yyjson_mut_get_str(link_k);
+        link.name = yyjson_get_str(link_k);
 
-        size_t idx2, max2;
-        yyjson_mut_val* leaf_k;
-        yyjson_mut_val* leaf_v;
-        yyjson_mut_obj_foreach(link_v, idx2, max2, leaf_k, leaf_v) {
-            bool k_is_is_open = strcmp(yyjson_mut_get_str(leaf_k), "__is_open__") == 0;
-            if (!k_is_is_open && yyjson_mut_is_str(leaf_v)) {
-                LinkLeaf leaf = {
-                    .name = yyjson_mut_get_str(leaf_k),
-                    .link = yyjson_mut_get_str(leaf_v),
-                };
-                link.leaves.push_back(leaf);
-            } else if (k_is_is_open && yyjson_mut_is_bool(leaf_v)) {
-                link.is_open = yyjson_mut_get_bool(leaf_v);
+        size_t leaf_i, leaf_max;
+        yyjson_val* leaf_k;
+        yyjson_val* leaf_v;
+        yyjson_obj_foreach(link_v, leaf_i, leaf_max, leaf_k, leaf_v) {
+            bool k_is_is_open = strcmp(yyjson_get_str(leaf_k), KEY_IS_OPEN) == 0;
+            if (k_is_is_open && yyjson_is_bool(leaf_v)) {
+                link.is_open = unsafe_yyjson_get_bool(leaf_v);
+            } else if (!k_is_is_open && yyjson_is_str(leaf_v)) {
+                link.leaves.push_back(LinkLeaf {
+                    .name = yyjson_get_str(leaf_k),
+                    .link = unsafe_yyjson_get_str(leaf_v),
+                });
             }
             // Ignore everything else.
+            // TODO: Should a warning be displayed here?
         }
 
         if (filter_state == 1) {
             link.is_open = true;
-        } else if (filter_state == 2){
+        } else if (filter_state == 2) {
             link.is_open = false;
         }
 
         state.links.push_back(link);
     }
 }
+} // namespace Json
 
 static bool LinkIsExecutable(const char* link, LinkType type) {
     // TODO: Would it be better to check against everything in PATHEXT?
@@ -380,6 +501,15 @@ static bool ExecuteLink(std::string const& link) {
 }
 
 namespace Gui {
+inline Utils::ButtonResult CornerOkCancelButtons() {
+    return Utils::GuiCornerButtons(S(THPRAC_OK), S(THPRAC_CANCEL), ImVec2(1.0f, 0.0f), true);
+}
+
+inline bool CornerOkButton() {
+    auto result = Utils::GuiCornerButtons(S(THPRAC_OK), nullptr, ImVec2(1.0f, 0.0f), true);
+    return result == Utils::ButtonResult::LeftPressed;
+}
+
 static void ClearEditPopupState() {
     state.input_link[0] = state.input_link_name[0] = state.input_link_parameters[0] = '\0';
     state.input_link_type = LinkType::Normal;
@@ -470,9 +600,9 @@ static int EditPopupMain() {
     }
     ImGui::SameLine();
 
-    // Another magic number...
-    auto result = Utils::GuiCornerButton(S(THPRAC_OK), S(THPRAC_CANCEL), ImVec2(1.0f, 0.0f), true);
-    if (result == 1) {
+    // TODO: Remove this cast to int
+    auto result = (int)CornerOkCancelButtons();
+    if (result == 1 /* Utils::ButtonResult::LeftPressed */) {
         if (strnlen_s(state.input_link_name, INPUT_CHARS_MAX) == 0) {
             state.input_error = LinkError::MissingName;
         } else if (strnlen_s(state.input_link, INPUT_CHARS_MAX)) {
@@ -488,7 +618,7 @@ static int EditPopupMain() {
             }
         }
         if (state.input_error != LinkError::Ok) {
-            result = 0;
+            result = 0; // Utils::ButtonResult::NonePressed
         }
     }
     return result;
@@ -562,7 +692,7 @@ static void ContextMenuUpdate() {
                 current_link.leaves.insert(current_link.leaves.begin() + (int)insert_i, new_leaf);
                 state.current_leaf = insert_i;
                 state.selected_link = nullptr;
-                WriteLinksToLauncherCfg();
+                Json::SaveLinksJson();
             }
             ImGui::CloseCurrentPopup();
         }
@@ -581,7 +711,7 @@ static void ContextMenuUpdate() {
                 auto& leaf_to_edit = state.links[state.current_leaf].leaves[state.current_leaf];
                 leaf_to_edit.name = state.input_link_name;
                 leaf_to_edit.link = final_link;
-                WriteLinksToLauncherCfg();
+                Json::SaveLinksJson();
             }
             ImGui::CloseCurrentPopup();
         }
@@ -594,7 +724,7 @@ static void ContextMenuUpdate() {
             auto& current_link = state.links[state.current_link];
             current_link.leaves.erase(current_link.leaves.begin() + (int)state.current_leaf);
             state.selected_link = nullptr;
-            WriteLinksToLauncherCfg();
+            Json::SaveLinksJson();
         }
         ImGui::EndPopup();
     }
@@ -614,13 +744,8 @@ static void ContextMenuUpdate() {
         }
         EditPopupShowErrorIfApplicable(state.input_error);
 
-        auto result = Utils::GuiCornerButton(
-            S(THPRAC_OK),
-            S(THPRAC_CANCEL),
-            ImVec2(1.0f, 0.0f),
-            true
-        );
-        if (result == 1) {
+        auto result = CornerOkCancelButtons();
+        if (result == Utils::ButtonResult::LeftPressed) {
             if (strnlen_s(state.input_link_name, INPUT_CHARS_MAX) == 0) {
                 state.input_error = LinkError::MissingName;
             } else for (auto const& link : state.links) {
@@ -636,10 +761,10 @@ static void ContextMenuUpdate() {
                     .is_open = true,
                 };
                 state.links.insert(state.links.begin() + (int)state.current_link, new_link);
-                WriteLinksToLauncherCfg();
+                Json::SaveLinksJson();
                 ImGui::CloseCurrentPopup();
             }
-        } else if (result == 2) {
+        } else if (result == Utils::ButtonResult::RightPressed) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -650,14 +775,14 @@ static void ContextMenuUpdate() {
         if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
             state.links.erase(state.links.begin() + (int)state.current_link);
             state.selected_link = nullptr;
-            WriteLinksToLauncherCfg();
+            Json::SaveLinksJson();
         }
         ImGui::EndPopup();
     }
 
     if (Modal(S(THPRAC_LINKS_ERR_MOVE_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_ERR_MOVE));
-        if (Utils::GuiCornerButton(S(THPRAC_OK), nullptr, ImVec2(1.0f, 0.0f), true)) {
+        if (CornerOkButton()) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -665,7 +790,7 @@ static void ContextMenuUpdate() {
 
     if (Modal(S(THPRAC_LINKS_ERR_EXEC_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_ERR_EXEC));
-        if (Utils::GuiCornerButton(S(THPRAC_OK), nullptr, ImVec2(1.0f, 0.0f), true)) {
+        if (CornerOkButton()) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -712,8 +837,8 @@ static bool PopupContextMenuMain(int type) {
         }
         if (state.links.size() == 0) {
             if (ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
-                WriteDefaultLinksToLauncherCfg();
-                LoadLinksFromLauncherCfg();
+                Json::ResetLinksJsonToDefault();
+                Json::LoadDefaultLinks();
             }
         }
         ImGui::EndPopup();
@@ -725,7 +850,7 @@ static bool PopupContextMenuMain(int type) {
 // TODO: Rename this function to match the other pages' convention.
 void LauncherLinksUiUpdate() {
     if (!state.page_initialized) [[unlikely]] {
-        LoadLinksFromLauncherCfg();
+        Json::LoadLinksJson();
         state.page_initialized = true;
     }
 
@@ -859,7 +984,7 @@ void LauncherLinksUiUpdate() {
 
         if (link.is_open != link_is_open) {
             link.is_open = link_is_open; // This is why .is_open is mutable
-            WriteLinksToLauncherCfg();
+            Json::SaveLinksJson();
             state.selected_link = nullptr;
         }
     }
@@ -880,7 +1005,7 @@ void LauncherLinksUiUpdate() {
 
         state.current_link = (size_t)filter_destination_index;
         state.selected_link = nullptr;
-        WriteLinksToLauncherCfg();
+        Json::SaveLinksJson();
     }
 
     if (move_destination_indexes[0] >= 0 && move_destination_indexes[1] >= 0) {
