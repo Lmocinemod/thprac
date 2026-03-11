@@ -7,6 +7,7 @@
 #include "utils/utils.h"
 
 #include <imgui.h>
+#include <shlobj_core.h>
 #include <string.h>
 #include <yyjson.h>
 
@@ -29,7 +30,7 @@ namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
 namespace Utils {
 std::optional<int> GetLauncherSetting(const char* name) {
-    // TODO: Actually implement this function
+    // TODO: Either implement this function, or just remove it entirely.
     [[maybe_unused]] auto silence_warning = name;
     return std::optional(0);
 }
@@ -70,16 +71,85 @@ std::wstring GetDirFromFullPath(std::wstring const& dir) {
     }
     return dir.substr(0, last_slash + 1);
 }
-std::wstring LauncherWndFileSelect(const wchar_t* title = L"Browse for file...", const wchar_t* filter = nullptr) {
-    // TODO: Actually implement this function
-    [[maybe_unused]] auto silence_warning_1 = title;
-    [[maybe_unused]] auto silence_warning_2 = filter;
-    return std::wstring();
+inline HWND GetLauncherHwnd() {
+    constexpr auto LP_CLASS_NAME = L"thprac launcher window";
+    // This should always be non-null, since we can't make it here without a window being spawned.
+    return FindWindowW(LP_CLASS_NAME, nullptr);
 }
-std::wstring LauncherWndFolderSelect(const wchar_t* title = L"Browse for folder...") {
-    // TODO: Actually implement this function
-    [[maybe_unused]] auto silence_warning = title;
-    return std::wstring();
+std::wstring WindowsFilePicker(
+    const wchar_t* lpstrTitle = L"Browse for file...",
+    const wchar_t* lpstrFilter = nullptr
+) {
+    wchar_t file_path[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {
+        .lStructSize = sizeof(OPENFILENAMEW),
+        .hwndOwner = GetLauncherHwnd(),
+        .lpstrFilter = lpstrFilter,
+        .nFilterIndex = 1,
+        .lpstrFile = file_path,
+        .nMaxFile = sizeof(file_path),
+        .lpstrTitle = lpstrTitle,
+        .Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NODEREFERENCELINKS | OFN_DONTADDTORECENT
+    };
+    GetOpenFileNameW(&ofn);
+    return std::wstring(file_path);
+}
+std::optional<std::wstring> WindowsFolderPicker(const wchar_t* title = L"Browse for folder...") {
+    // This function used to have a fallback for XP support, but thprac doesn't support XP anymore,
+    // so it's been removed.
+    if (FAILED(CoInitialize(nullptr))) {
+        return std::nullopt;
+    }
+    defer(CoUninitialize());
+
+    PIDLIST_ABSOLUTE initial_path = nullptr;
+    wchar_t folder_path[MAX_PATH] = {};
+    GetCurrentDirectoryW(MAX_PATH, folder_path);
+    // MSDN says you're not supposed to call this from the main thread, but uh... YOLO?
+    auto result_1 = SHParseDisplayName(folder_path, nullptr, &initial_path, NULL, nullptr);
+    if (result_1 != S_OK) {
+        return std::nullopt;
+    }
+
+    IFileDialog* file_dialog = nullptr;
+    if (FAILED(CoCreateInstance(
+        CLSID_FileOpenDialog,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&file_dialog)
+    )) || file_dialog == nullptr) {
+        return std::nullopt;
+    }
+    defer(file_dialog->Release());
+    IShellItem* item_1 = nullptr;
+    SHCreateItemFromIDList(initial_path, IID_PPV_ARGS(&item_1));
+    if (item_1 == nullptr) {
+        return std::nullopt;
+    }
+    defer(item_1->Release());
+
+    // TODO: Should we check the return codes for these method calls?
+    file_dialog->SetDefaultFolder(item_1);
+    file_dialog->SetOptions(
+        FOS_NOCHANGEDIR | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST
+        | FOS_FILEMUSTEXIST | FOS_DONTADDTORECENT
+    );
+    file_dialog->SetTitle(title);
+
+    IShellItem* item_2 = nullptr;
+    if (FAILED(file_dialog->Show(GetLauncherHwnd())) || FAILED(file_dialog->GetResult(&item_2))) {
+        return std::nullopt;
+    }
+    defer(item_2->Release());
+    PIDLIST_ABSOLUTE id_list = nullptr;
+    SHGetIDListFromObject(item_2, &id_list);
+    if (id_list != nullptr) {
+        defer(CoTaskMemFree(id_list));
+        if (SHGetPathFromIDListW(id_list, folder_path)) {
+            return std::optional(folder_path);
+        }
+    }
+    return std::nullopt;
 }
 enum class ButtonResult {
     NonePressed,
@@ -167,20 +237,18 @@ enum class UiAction {
     ErrorExecutable,
 };
 
-// TODO: Remove the magic number hints
 enum class TargetType {
-    Normal, // 0
-    FilePath, // 1
-    FolderPath, // 2
+    Url,
+    ExecutablePath,
+    NonExecutablePath,
 };
 
-// TODO: Remove the magic number hints
 enum class EditError {
-    Ok, // 0
-    MissingName, // 1
-    MissingTarget, // 2
-    DuplicateName, // 3
-    ReservedName, // 4
+    Ok,
+    MissingName,
+    MissingTarget,
+    DuplicateName,
+    ReservedName,
 };
 
 #pragma region GlobalMutableState
@@ -203,7 +271,7 @@ struct THLinksPageState {
     char input_target[INPUT_CHARS_MAX];
     char input_target_parameters[INPUT_CHARS_MAX];
     // These are used exclusively by ClearEditPopupState(), EditPopupMain(), and HandleUiAction()
-    TargetType input_target_type = TargetType::Normal;
+    TargetType input_target_type = TargetType::Url;
     EditError input_error = EditError::Ok;
 };
 static THLinksPageState state;
@@ -218,12 +286,8 @@ static void Debug(const char* message, bool is_error = false) {
         fprintf(stderr, "INFO: %s\n", message);
     }
 
-    constexpr auto LP_CLASS_NAME = L"thprac launcher window";
-    // This should always be non-null, since we can't make it here without a window being spawned.
-    // But even if it does somehow end up null, it just means the MessageBox will have no parent.
-    HWND hWnd = FindWindowW(LP_CLASS_NAME, nullptr);
     UINT uType = is_error ? MB_ICONERROR : MB_ICONINFORMATION;
-    MessageBoxA(hWnd, message, "DEBUG", uType);
+    MessageBoxA(Utils::GetLauncherHwnd(), message, "DEBUG", uType);
 }
 
 // TODO: Probably handle errors more gracefully... or something?
@@ -348,8 +412,12 @@ static void LoadDefaultFilterAndLeaves() {
 }
 
 static void LoadLinksJson() {
-    // TODO: Turn this magic number into an enum if possible.
-    int filter_state = Utils::GetLauncherSetting("filter_default").value();
+    enum class DefaultFilterState {
+        KeepPrevious,
+        Open,
+        Closed,
+    };
+    auto filter_state = (DefaultFilterState)Utils::GetLauncherSetting("filter_default").value_or(0);
 
     FILE* f;
     auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"rb");
@@ -416,9 +484,9 @@ static void LoadLinksJson() {
             // TODO: Should a warning be displayed here?
         }
 
-        if (filter_state == 1) {
+        if (filter_state == DefaultFilterState::Open) {
             filter.is_open = true;
-        } else if (filter_state == 2) {
+        } else if (filter_state == DefaultFilterState::Closed) {
             filter.is_open = false;
         }
 
@@ -429,7 +497,7 @@ static void LoadLinksJson() {
 
 static bool TargetIsExecutable(const char* target, TargetType type) {
     // TODO: Would it be better to check against everything in PATHEXT?
-    return type == TargetType::FilePath && Utils::GetSuffixFromPath(target) == "exe";
+    return type == TargetType::ExecutablePath && Utils::GetSuffixFromPath(target) == "exe";
 }
 
 static std::string WrapTarget(const char* target, const char* parameters, TargetType type) {
@@ -458,15 +526,15 @@ static TargetInfo GetTargetInfo(std::string const& target) {
         while (result.parameters.size() > 0 && isblank(result.parameters[0])) {
             result.parameters.erase(0, 1);
         }
-        result.type = TargetType::FilePath;
+        result.type = TargetType::ExecutablePath;
     } else {
         result.file = target;
         result.parameters = "";
         auto unified = Utils::GetUnifiedPath(target);
         if (isalpha(unified[0]) && unified[1] == ':' && unified[2] == '\\') {
-            result.type = TargetType::FolderPath;
+            result.type = TargetType::NonExecutablePath;
         } else {
-            result.type = TargetType::Normal;
+            result.type = TargetType::Url;
         }
     }
     return result;
@@ -481,7 +549,7 @@ static bool ExecuteTarget(std::string const& target) {
     std::wstring target_directory_w;
 
     switch (target_info.type) {
-    case TargetType::FilePath:
+    case TargetType::ExecutablePath:
         target_directory_w = Utils::GetDirFromFullPath(target_file_w);
         result = ShellExecuteW(
             nullptr,
@@ -492,8 +560,8 @@ static bool ExecuteTarget(std::string const& target) {
             SW_SHOW
         );
         break;
-    case TargetType::Normal:
-    case TargetType::FolderPath:
+    case TargetType::Url:
+    case TargetType::NonExecutablePath:
         result = ShellExecuteW(nullptr, nullptr, target_file_w.c_str(), nullptr, nullptr, SW_SHOW);
         break;
     default:
@@ -516,7 +584,7 @@ inline bool CornerOkButton() {
 
 static void ClearEditPopupState() {
     state.input_target[0] = state.input_name[0] = state.input_target_parameters[0] = '\0';
-    state.input_target_type = TargetType::Normal;
+    state.input_target_type = TargetType::Url;
     state.input_error = EditError::Ok;
 }
 
@@ -564,7 +632,7 @@ static EditResult EditPopupMain() {
     ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_LINK));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
-    if (state.input_target_type == TargetType::Normal) {
+    if (state.input_target_type == TargetType::Url) {
         if (ImGui::InputText("##__input_target", state.input_target, INPUT_CHARS_MAX)) {
             if (state.input_error == EditError::MissingTarget) {
                 state.input_error = EditError::Ok;
@@ -583,28 +651,29 @@ static EditResult EditPopupMain() {
     EditPopupShowErrorIfApplicable(state.input_error);
 
     if (ImGui::Button(S(THPRAC_LINKS_EDIT_FILE))) {
-        auto file_str = Utils::LauncherWndFileSelect();
+        auto file_str = Utils::WindowsFilePicker();
         if (file_str.length() > 0) {
             state.input_error = EditError::Ok;
-            state.input_target_type = TargetType::FilePath;
+            // TODO: Is this a safe assumption to make?
+            state.input_target_type = TargetType::ExecutablePath;
             state.input_target_parameters[0] = '\0';
             sprintf_s(state.input_target, "%s", utf16_to_utf8(file_str.c_str()).c_str());
         }
     }
     ImGui::SameLine();
     if (ImGui::Button(S(THPRAC_LINKS_EDIT_FOLDER))) {
-        auto folder_str = Utils::LauncherWndFolderSelect();
-        if (folder_str.length() > 0) {
+        auto maybe_folder = Utils::WindowsFolderPicker();
+        if (maybe_folder.has_value()) {
             state.input_error = EditError::Ok;
-            state.input_target_type = TargetType::FolderPath;
-            sprintf_s(state.input_target, "%s", utf16_to_utf8(folder_str.c_str()).c_str());
+            state.input_target_type = TargetType::NonExecutablePath;
+            sprintf_s(state.input_target, "%s", utf16_to_utf8((*maybe_folder).c_str()).c_str());
         }
     }
     ImGui::SameLine();
     if (ImGui::Button(S(THPRAC_LINKS_EDIT_INPUT))) {
         state.input_error = EditError::Ok;
         state.input_target[0] = '\0';
-        state.input_target_type = TargetType::Normal;
+        state.input_target_type = TargetType::Url;
     }
     ImGui::SameLine();
 
@@ -769,7 +838,7 @@ static void HandleUiAction() {
             if (state.input_error == EditError::Ok) {
                 Filter new_filter = {
                     .name = state.input_name,
-                    // .links = (default)
+                    // .leaves = (default)
                     .is_open = true,
                 };
                 state.filters.insert(state.filters.begin() + (int)state.current_filter, new_filter);
