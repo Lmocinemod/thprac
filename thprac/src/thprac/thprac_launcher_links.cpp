@@ -303,16 +303,20 @@ constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_
 constexpr auto KEY_DEFAULT = "Default";
 constexpr auto KEY_IS_OPEN = "__is_open__";
 
-constexpr size_t N_DEFAULT_FILTER_LEAVES = 8;
+constexpr size_t N_DEFAULT_FILTER_LEAVES = 11;
 constexpr const char* DEFAULT_FILTER_LEAVES[N_DEFAULT_FILTER_LEAVES][2] = {
-    {"Royalflare Archive", "https://maribelhearn.com/royalflare"},
-    {"Lunarcast", "http://replay.lunarcast.net/"},
+    // TODO: Make these names localizable?
+    {"Royalflare Archive", "https://maribelhearn.com/royalflare/"},
     {"PND's Scoreboard", "https://thscore.pndsng.com/index.php"},
+    {"甜品站 (isndes)", "https://www.isndes.com/"},
+    {"Lunarcast", "http://replay.lunarcast.net/"},
+    {"Silent Selene", "https://www.silentselene.net/"},
     {"Maribel Hearn's Touhou Portal", "https://maribelhearn.com/"},
     {"Touhou Patch Center", "https://www.thpatch.net/"},
-    {"Touhou Replay Showcase", "https://twitch.tv/touhou_replay_showcase"},
-    {"甜品站 (isndes)", "https://www.isndes.com/"},
-    {"THBWiki", "https://thwiki.cc/"}
+    {"Touhou Replay Showcase", "https://twitch.tv/touhou_replay_showcase/"},
+    {"Touhou World Cup", "https://touhouworldcup.com/"},
+    {"THBWiki", "https://thwiki.cc/"},
+    {"Touhou Wiki (EN)", "https://en.touhouwiki.net/"}
 };
 
 static const std::wstring& GetLinksJsonFilePath() {
