@@ -613,6 +613,11 @@ static void LoadLinksJson() {
 }
 } // namespace Json
 
+static void ToggleFilterOpenState(Filter const& filter) {
+    filter.is_open = !filter.is_open; // This is why .is_open is mutable
+    Json::SaveLinksJson();
+}
+
 static bool TargetIsExecutable(const char* target, TargetType type) {
     // TODO: Would it be better to check against everything in PATHEXT?
     return type == TargetType::ExecutablePath && Utils::GetSuffixFromPath(target) == "exe";
@@ -1103,12 +1108,30 @@ void LauncherLinksUiUpdate() {
     for (size_t filter_i = 0; filter_i < state.filters.size(); filter_i++) {
         auto const& filter = state.filters[filter_i];
 
-        ImGui::SetNextItemOpen(filter.is_open, ImGuiCond_FirstUseEver);
-        int filter_flags = ImGuiTreeNodeFlags_SpanAvailWidth;
+        // Override ImGui's usual on-click behavior for TreeNodes (we're doing it ourselves).
+        // Modifying filter.is_open will take effect on the next UI update, which is slightly janky,
+        // but good enough for our purposes.
+        ImGui::SetNextItemOpen(filter.is_open, ImGuiCond_Always);
+        int filter_flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow;
         if (state.selection.Is(filter)) {
             filter_flags |= ImGuiTreeNodeFlags_Selected;
         }
-        auto filter_is_open = ImGui::TreeNodeEx(filter.name.c_str(), filter_flags);
+
+        auto current_filter_is_open = ImGui::TreeNodeEx(filter.name.c_str(), filter_flags);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+            if (filter.is_open != current_filter_is_open) {
+                // User clicked the arrow
+                state.selection.SelectFilter(filter_i, filter);
+                ToggleFilterOpenState(filter);
+            } else {
+                // User clicked the filter, but not the arrow
+                if (!state.selection.Is(filter)) {
+                    state.selection.SelectFilter(filter_i, filter);
+                } else {
+                    ToggleFilterOpenState(filter);
+                }
+            }
+        }
         if (ImGui::BeginDragDropSource()) {
             state.filter_move_index = (int)filter_i;
             ImGui::SetDragDropPayload(
@@ -1141,11 +1164,11 @@ void LauncherLinksUiUpdate() {
         ImGui::NextColumn();
 
         // TODO: Maybe extract this into its own function?
-        if (filter_is_open) {
+        if (current_filter_is_open) {
             for (size_t leaf_i = 0; leaf_i < filter.leaves.size(); leaf_i++) {
                 auto const& leaf = filter.leaves[leaf_i];
 
-                auto leaf_flags = ImGuiTreeNodeFlags_Leaf
+                int leaf_flags = ImGuiTreeNodeFlags_Leaf
                     | ImGuiTreeNodeFlags_NoTreePushOnOpen
                     | ImGuiTreeNodeFlags_SpanAvailWidth;
                 if (state.selection.Is(leaf)) {
@@ -1192,12 +1215,6 @@ void LauncherLinksUiUpdate() {
                 ImGui::NextColumn();
             }
             ImGui::TreePop();
-        }
-
-        if (filter.is_open != filter_is_open) {
-            filter.is_open = filter_is_open; // This is why .is_open is mutable
-            Json::SaveLinksJson();
-            state.selection.SelectFilter(filter_i, filter); // Select the filter we clicked on
         }
     }
 
