@@ -971,7 +971,7 @@ static void HandleUiAction() {
                     // .leaves = (default)
                     .is_open = true,
                 };
-                size_t insert_i = 0;
+                size_t insert_i = state.filters.size();
                 if (state.selection.Exists()) {
                     insert_i = state.selection.GetFilterInfo().i;
                 }
