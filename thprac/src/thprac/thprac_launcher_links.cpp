@@ -269,6 +269,7 @@ enum class UiAction {
     DeleteLeaf,
     AddFilter,
     DeleteFilter,
+    RestoreDefaultFilters,
     ErrorDuplicateName,
     ErrorExecutingTarget,
 };
@@ -830,6 +831,8 @@ static EditResult EditPopupMain() {
 static void HandleUiAction() {
     th_glossary_t popup_str_id = A0000ERROR_C;
     switch (state.ui_action) {
+    case UiAction::None:
+        break;
     case UiAction::AddLeaf:
         ClearEditPopupState();
         popup_str_id = THPRAC_LINKS_ADD;
@@ -857,13 +860,15 @@ static void HandleUiAction() {
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
         break;
+    case UiAction::RestoreDefaultFilters:
+        Json::ResetLinksJsonToDefault();
+        Json::LoadDefaultFilterAndLeaves();
+        break;
     case UiAction::ErrorDuplicateName:
         popup_str_id = THPRAC_LINKS_ERR_MOVE_MODAL;
         break;
     case UiAction::ErrorExecutingTarget:
         popup_str_id = THPRAC_LINKS_ERR_EXEC_MODAL;
-        break;
-    default:
         break;
     }
 
@@ -1015,7 +1020,6 @@ static void HandleUiAction() {
     }
 }
 
-// TODO: Figure out what each of these types are.
 enum class ContextMenuType {
     OnBackground,
     OnFilter,
@@ -1036,7 +1040,7 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
                 state.ui_action = UiAction::DeleteLeaf;
             }
             ImGui::Separator();
-        } else /* type == 1 */ {
+        } else /* ContextMenuType::OnFilter */ {
             if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_DEL))) {
                 state.ui_action = UiAction::DeleteFilter;
             }
@@ -1051,18 +1055,16 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
         }
         ImGui::EndPopup();
         return true;
-    } else /* type == ContextMenuType::Unknown0 */ {
+    } else /* ContextMenuType::OnBackground */ {
+        // NOTE: Different ImGui call from the other types!
         if (!ImGui::BeginPopupContextWindow()) {
             return false;
         }
         if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
             state.ui_action = UiAction::AddFilter;
         }
-        if (state.filters.size() == 0) {
-            if (ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
-                Json::ResetLinksJsonToDefault();
-                Json::LoadDefaultFilterAndLeaves();
-            }
+        if (state.filters.size() == 0 && ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
+            state.ui_action = UiAction::RestoreDefaultFilters;
         }
         ImGui::EndPopup();
         return true;
@@ -1086,6 +1088,7 @@ void LauncherLinksUiUpdate() {
     int move_destination_indexes[2] = {-1, -1}; // "destIdx"
     int filter_destination_index = -1; // "filterDestIdx"
 
+    defer(Gui::HandleUiAction());
     if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnBackground)) {
         state.selection.Deselect();
     }
@@ -1290,8 +1293,6 @@ void LauncherLinksUiUpdate() {
         // User clicked the background - clear selection
         state.selection.Deselect();
     }
-
-    Gui::HandleUiAction();
 }
 
 void LauncherLinksInformPageSwitched() {
