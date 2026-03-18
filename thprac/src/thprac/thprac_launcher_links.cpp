@@ -12,6 +12,7 @@
 #include <yyjson.h>
 
 #include <cstdlib>
+// TODO: std::format() apparently adds 0.3MB to the binary size, so replace it before upstreaming.
 #include <format>
 #include <optional>
 #include <string>
@@ -233,8 +234,8 @@ enum class UiAction {
     DeleteLeaf,
     AddFilter,
     DeleteFilter,
-    ErrorDuplicate,
-    ErrorExecutable,
+    ErrorDuplicateName,
+    ErrorExecutingTarget,
 };
 
 enum class TargetType {
@@ -250,33 +251,6 @@ enum class EditError {
     DuplicateName,
     ReservedName,
 };
-
-#pragma region GlobalMutableState
-
-constexpr size_t INPUT_CHARS_MAX = 1024;
-struct THLinksPageState {
-    std::vector<Filter> filters;
-    UiAction ui_action = UiAction::None;
-    BaseSelectableObject* selected_object = nullptr;
-    size_t current_filter = 0;
-    size_t current_leaf = 0;
-    // TODO: Don't use -1 to mean "invalid index".
-    // TODO: Why do these need to be global state, anyway?
-    // TODO: Apparently [0] is the index for filters, and [1] for leaves?
-    int move_indexes[2] = {-1, -1}; // "moveIdx"
-    int filter_move_index = -1; // "filterMoveIdx"
-    // TODO: These aren't properly bounds-checked in several cases. Maybe use strings/arrays instead?
-    // (Maybe also move all the input_* stuff into a sub-struct, which could then have a Reset method.)
-    char input_name[INPUT_CHARS_MAX];
-    char input_target[INPUT_CHARS_MAX];
-    char input_target_parameters[INPUT_CHARS_MAX];
-    // These are used exclusively by ClearEditPopupState(), EditPopupMain(), and HandleUiAction()
-    TargetType input_target_type = TargetType::Url;
-    EditError input_error = EditError::Ok;
-};
-static THLinksPageState state;
-
-#pragma endregion // GlobalMutableState
 
 // TODO: Either remove this function, or replace it with something better.
 static void Debug(const char* message, bool is_error = false) {
@@ -295,6 +269,132 @@ static void Debug(const char* message, bool is_error = false) {
     Debug("Out of memory (probably)", true);
     exit(EXIT_FAILURE);
 }
+
+#pragma region GlobalMutableState
+
+struct SelectedFilterInfo {
+    size_t i;
+    bool is_selected;
+};
+struct SelectedLeafInfo {
+    size_t filter_i;
+    size_t leaf_i;
+};
+
+class Selection {
+private:
+    bool m_is_leaf = false;
+    std::optional<size_t> m_filter_i = std::nullopt;
+    std::optional<size_t> m_leaf_i = std::nullopt;
+    union {
+        const Filter* filter;
+        const Leaf* leaf;
+    } m_target_ptr = {.filter = nullptr};
+
+    [[noreturn]] void PanicConstraintViolation(const char* method_name) {
+        auto message = std::format(
+            "CONSTRAINT VIOLATION: Attempt to call Selection.{}() while no selection exists",
+            method_name
+        );
+        Debug(message.c_str(), true);
+        exit(EXIT_FAILURE);
+    }
+
+public:
+    void SelectFilter(size_t filter_i, Filter const& filter) {
+        m_is_leaf = false;
+        m_target_ptr.filter = &filter;
+        m_filter_i = std::optional(filter_i);
+        m_leaf_i = std::nullopt;
+    }
+    void SelectLeaf(size_t filter_i, size_t leaf_i, Leaf const& leaf) {
+        m_is_leaf = true;
+        m_target_ptr.leaf = &leaf;
+        m_filter_i = std::optional(filter_i);
+        m_leaf_i = std::optional(leaf_i);
+    }
+    void Deselect() {
+        m_is_leaf = false;
+        m_target_ptr.filter = nullptr;
+        m_filter_i = std::nullopt;
+        m_leaf_i = std::nullopt;
+    }
+
+    bool Exists() {
+        // These branches do the same thing, but both must be present to avoid UB.
+        if (m_is_leaf) {
+            return m_target_ptr.leaf != nullptr;
+        } else {
+            return m_target_ptr.filter != nullptr;
+        }
+    }
+    bool ExistsAndIsLeaf() {
+        if (!Exists()) {
+            return false;
+        }
+        return m_is_leaf;
+    }
+
+    bool Is(Filter const& filter) {
+        if (m_is_leaf) {
+            return false;
+        }
+        return m_target_ptr.filter == &filter;
+    }
+    bool Is(Leaf const& leaf) {
+        if (!m_is_leaf) {
+            return false;
+        }
+        return m_target_ptr.leaf == &leaf;
+    }
+
+    SelectedFilterInfo GetFilterInfo() {
+        if (!Exists()) {
+            PanicConstraintViolation("GetFilterInfo");
+        }
+
+        return {
+            .i = m_filter_i.value(),
+            .is_selected = !m_is_leaf,
+        };
+    }
+    SelectedLeafInfo GetLeafInfo() {
+        if (!Exists() || !m_is_leaf) {
+            PanicConstraintViolation("GetLeafInfo");
+        }
+
+        return {
+            .filter_i = m_filter_i.value(),
+            .leaf_i = m_leaf_i.value(),
+        };
+    }
+};
+
+constexpr size_t INPUT_CHARS_MAX = 1024;
+struct THLinksPageState {
+    std::vector<Filter> filters;
+    UiAction ui_action = UiAction::None;
+    Selection selection;
+    // BaseSelectableObject* selected_object = nullptr;
+    // size_t current_filter = 0;
+    // size_t current_leaf = 0;
+    // TODO: Don't use -1 to mean "invalid index".
+    // TODO: Why do these need to be global state, anyway?
+    // TODO: Apparently [0] is the index for filters, and [1] for leaves?
+    int move_indexes[2] = {-1, -1}; // "moveIdx"
+    int filter_move_index = -1; // "filterMoveIdx"
+    // TODO: These aren't properly bounds-checked in several cases. Maybe use strings/arrays instead?
+    // (Maybe also move all the input_* stuff into a sub-struct, which could then have a Reset method.)
+    char input_name[INPUT_CHARS_MAX];
+    char input_target[INPUT_CHARS_MAX];
+    char input_target_parameters[INPUT_CHARS_MAX];
+    // These are used exclusively by ClearEditPopupState(), EditPopupMain(), and HandleUiAction()
+    TargetType input_target_type = TargetType::Url;
+    EditError input_error = EditError::Ok;
+};
+static THLinksPageState state;
+
+#pragma endregion // GlobalMutableState
 
 namespace Json {
 constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
@@ -689,8 +789,9 @@ static EditResult EditPopupMain() {
             state.input_error = EditError::MissingTarget;
         } else if (strcmp(state.input_name, "__is_open__") == 0) {
             state.input_error = EditError::ReservedName;
-        } else {
-            for (auto const& leaf : state.filters[state.current_filter].leaves) {
+        } else if (state.selection.Exists()) {
+            auto const& current_filter = state.filters[state.selection.GetFilterInfo().i];
+            for (auto const& leaf : current_filter.leaves) {
                 if (leaf.name == state.input_name) {
                     state.input_error = EditError::DuplicateName;
                     break;
@@ -719,7 +820,8 @@ static void HandleUiAction() {
     case UiAction::EditLeaf:
         ClearEditPopupState();
         {
-            auto& leaf = state.filters[state.current_filter].leaves[state.current_leaf];
+            auto [filter_index, leaf_index] = state.selection.GetLeafInfo();
+            auto const& leaf = state.filters[filter_index].leaves[leaf_index];
             auto info = GetTargetInfo(leaf.target);
             state.input_target_type = info.type;
             strcpy_s(state.input_name, leaf.name.c_str());
@@ -738,10 +840,10 @@ static void HandleUiAction() {
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
         break;
-    case UiAction::ErrorDuplicate:
+    case UiAction::ErrorDuplicateName:
         popup_str_id = THPRAC_LINKS_ERR_MOVE_MODAL;
         break;
-    case UiAction::ErrorExecutable:
+    case UiAction::ErrorExecutingTarget:
         popup_str_id = THPRAC_LINKS_ERR_EXEC_MODAL;
         break;
     default:
@@ -770,13 +872,17 @@ static void HandleUiAction() {
                 };
 
                 size_t insert_i = 0;
-                if (state.selected_object != nullptr) {
-                    insert_i = state.current_leaf;
+                if (state.selection.ExistsAndIsLeaf()) {
+                    insert_i = state.selection.GetLeafInfo().leaf_i;
                 }
-                auto& current_filter = state.filters[state.current_filter];
-                current_filter.leaves.insert(current_filter.leaves.begin() + (int)insert_i, new_leaf);
-                state.current_leaf = insert_i;
-                state.selected_object = nullptr;
+                size_t filter_i = state.selection.GetFilterInfo().i;
+                auto& current_filter = state.filters[filter_i];
+                current_filter.leaves.insert(
+                    current_filter.leaves.begin() + (int)insert_i,
+                    std::move(new_leaf)
+                );
+                // Select newly-added leaf
+                state.selection.SelectLeaf(filter_i, insert_i, current_filter.leaves[insert_i]);
                 Json::SaveLinksJson();
             }
             ImGui::CloseCurrentPopup();
@@ -793,7 +899,8 @@ static void HandleUiAction() {
                     state.input_target_parameters,
                     state.input_target_type
                 );
-                auto& leaf_to_edit = state.filters[state.current_filter].leaves[state.current_leaf];
+                auto [filter_i, leaf_i] = state.selection.GetLeafInfo();
+                auto& leaf_to_edit = state.filters[filter_i].leaves[leaf_i];
                 leaf_to_edit.name = state.input_name;
                 leaf_to_edit.target = final_target;
                 Json::SaveLinksJson();
@@ -806,9 +913,11 @@ static void HandleUiAction() {
     if (Modal(S(THPRAC_LINKS_DELETE_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_DELETE_WARNING));
         if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
-            auto& current_filter = state.filters[state.current_filter];
-            current_filter.leaves.erase(current_filter.leaves.begin() + (int)state.current_leaf);
-            state.selected_object = nullptr;
+            auto [filter_i, leaf_i] = state.selection.GetLeafInfo();
+            auto& current_filter = state.filters[filter_i];
+            current_filter.leaves.erase(current_filter.leaves.begin() + (int)leaf_i);
+            // Select containing filter
+            state.selection.SelectFilter(filter_i, current_filter);
             Json::SaveLinksJson();
         }
         ImGui::EndPopup();
@@ -845,7 +954,13 @@ static void HandleUiAction() {
                     // .leaves = (default)
                     .is_open = true,
                 };
-                state.filters.insert(state.filters.begin() + (int)state.current_filter, new_filter);
+                size_t insert_i = 0;
+                if (state.selection.Exists()) {
+                    insert_i = state.selection.GetFilterInfo().i;
+                }
+                state.filters.insert(state.filters.begin() + (int)insert_i, std::move(new_filter));
+                // Select newly-added filter
+                state.selection.SelectFilter(insert_i, state.filters[insert_i]);
                 Json::SaveLinksJson();
                 ImGui::CloseCurrentPopup();
             }
@@ -858,8 +973,9 @@ static void HandleUiAction() {
     if (Modal(S(THPRAC_LINKS_FILTER_DEL_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_FILTER_DELETE_WARNING));
         if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
-            state.filters.erase(state.filters.begin() + (int)state.current_filter);
-            state.selected_object = nullptr;
+            state.filters.erase(state.filters.begin() + (int)state.selection.GetFilterInfo().i);
+            // Unclear what should be selected at this point
+            state.selection.Deselect();
             Json::SaveLinksJson();
         }
         ImGui::EndPopup();
@@ -884,18 +1000,18 @@ static void HandleUiAction() {
 
 // TODO: Figure out what each of these types are.
 enum class ContextMenuType {
-    Unknown0,
-    Unknown1,
-    Unknown2,
+    OnBackground,
+    OnFilter,
+    OnLeaf,
 };
 // TODO: Maybe this should return UiAction, instead of mutating global state?
 static bool ShowContextMenuIfApplicable(ContextMenuType type) {
-    if (type == ContextMenuType::Unknown1 || type == ContextMenuType::Unknown2) {
+    if (type == ContextMenuType::OnFilter || type == ContextMenuType::OnLeaf) {
         if (!ImGui::BeginPopupContextItem()) {
             return false;
         }
 
-        if (type == ContextMenuType::Unknown2) {
+        if (type == ContextMenuType::OnLeaf) {
             if (ImGui::Selectable(S(THPRAC_LINKS_EDIT))) {
                 state.ui_action = UiAction::EditLeaf;
             }
@@ -953,12 +1069,12 @@ void LauncherLinksUiUpdate() {
     int move_destination_indexes[2] = {-1, -1}; // "destIdx"
     int filter_destination_index = -1; // "filterDestIdx"
 
-    if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::Unknown0)) {
-        state.selected_object = nullptr;
-        state.current_filter = state.filters.size(); // TODO: Invalid, but not obviously so. Why?
+    if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnBackground)) {
+        state.selection.Deselect();
     }
     if (state.filters.size() == 0) {
         ImGui::SetCursorPosY(ImGui::GetWindowHeight() * 0.5f);
+        // TODO: Some users get confused by this message. Maybe add a "Restore defaults" button here?
         Gui::TextCentered(S(THPRAC_GAMES_MISSING), ImGui::GetWindowWidth());
         return;
     }
@@ -968,7 +1084,7 @@ void LauncherLinksUiUpdate() {
         auto const& filter = state.filters[filter_i];
 
         ImGui::SetNextItemOpen(filter.is_open, ImGuiCond_FirstUseEver);
-        auto filter_flags = (state.selected_object == &filter)
+        auto filter_flags = (state.selection.Is(filter))
             ? ImGuiTreeNodeFlags_Selected
             : ImGuiTreeNodeFlags_None;
         auto filter_is_open = ImGui::TreeNodeEx(filter.name.c_str(), filter_flags);
@@ -982,7 +1098,7 @@ void LauncherLinksUiUpdate() {
             ImGui::EndDragDropSource();
         }
         if (ImGui::BeginDragDropTarget()) {
-            auto payload = ImGui::AcceptDragDropPayload("##__dnd_link_filter");
+            auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_filter");
             if (payload != nullptr) {
                 filter_destination_index = (int)filter_i;
             }
@@ -997,12 +1113,12 @@ void LauncherLinksUiUpdate() {
             ImGui::EndDragDropTarget();
         }
 
-        if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::Unknown1)) {
-            // TODO: This pointer cast is UGLY. There has GOT to be a better way to do this.
-            state.selected_object = (BaseSelectableObject*)&filter;
-            state.current_filter = filter_i;
-        } else if (state.selected_object == &filter) {
-            state.selected_object = nullptr;
+        if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnFilter)) {
+            state.selection.SelectFilter(filter_i, filter);
+        } else if (state.selection.Is(filter)) {
+            // TODO: Is this correct? Wouldn't this just unconditionally deselect whenever a context
+            // menu isn't open?
+            // state.selection.Deselect();
         }
         ImGui::NextColumn();
         ImGui::NextColumn();
@@ -1015,25 +1131,19 @@ void LauncherLinksUiUpdate() {
                 auto leaf_flags = ImGuiTreeNodeFlags_Leaf
                     | ImGuiTreeNodeFlags_NoTreePushOnOpen
                     | ImGuiTreeNodeFlags_SpanAvailWidth;
-                if (state.selected_object == &leaf) {
+                if (state.selection.Is(leaf)) {
                     leaf_flags |= ImGuiTreeNodeFlags_Selected;
                 }
                 ImGui::TreeNodeEx((void*)(intptr_t)leaf_i, leaf_flags, "%s", leaf.name.c_str());
 
                 if (ImGui::IsItemHovered()) {
-                    auto SelectCurrentLeaf = [&]() {
-                        // TODO: Another ugly pointer cast...
-                        state.selected_object = (BaseSelectableObject*)&leaf;
-                        state.current_filter = filter_i;
-                        state.current_leaf = leaf_i;
-                    };
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        SelectCurrentLeaf();
+                        state.selection.SelectLeaf(filter_i, leaf_i, leaf);
                         if (!ExecuteTarget(leaf.target)) {
-                            state.ui_action = UiAction::ErrorExecutable;
+                            state.ui_action = UiAction::ErrorExecutingTarget;
                         }
                     } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                        SelectCurrentLeaf();
+                        state.selection.SelectLeaf(filter_i, leaf_i, leaf);
                     }
                 }
 
@@ -1056,11 +1166,8 @@ void LauncherLinksUiUpdate() {
                     ImGui::EndDragDropTarget();
                 }
 
-                if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::Unknown2)) {
-                    // TODO: Another ugly pointer cast...
-                    state.selected_object = (BaseSelectableObject*)&leaf;
-                    state.current_filter = filter_i;
-                    state.current_leaf = leaf_i;
+                if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnLeaf)) {
+                    state.selection.SelectLeaf(filter_i, leaf_i, leaf);
                 }
 
                 ImGui::NextColumn();
@@ -1073,7 +1180,9 @@ void LauncherLinksUiUpdate() {
         if (filter.is_open != filter_is_open) {
             filter.is_open = filter_is_open; // This is why .is_open is mutable
             Json::SaveLinksJson();
-            state.selected_object = nullptr;
+            // TODO: Is this correct? Why are we deselecting everything when we open/close filters?
+            // state.selection.Deselect();
+            state.selection.SelectFilter(filter_i, filter); // Select the filter we clicked on
         }
     }
 
@@ -1082,21 +1191,32 @@ void LauncherLinksUiUpdate() {
     // TODO: It looks like these conditionals are where the actual swapping happens. Maybe extract
     // these into functions? (Also, this first one can probably be a rotate instead.)
     if (filter_destination_index >= 0) {
+        // TODO: I'm pretty sure this unconditionally makes a copy. Why?
         auto filter_temp = state.filters[(size_t)state.filter_move_index];
         if (filter_destination_index > state.filter_move_index) {
-            state.filters.insert(state.filters.begin() + filter_destination_index + 1, filter_temp);
+            state.filters.insert(
+                state.filters.begin() + filter_destination_index + 1,
+                std::move(filter_temp)
+            );
             state.filters.erase(state.filters.begin() + state.filter_move_index);
         } else if (filter_destination_index < state.filter_move_index) {
-            state.filters.insert(state.filters.begin() + filter_destination_index, filter_temp);
+            state.filters.insert(
+                state.filters.begin() + filter_destination_index,
+                std::move(filter_temp)
+            );
             state.filters.erase(state.filters.begin() + state.filter_move_index + 1);
         }
 
-        state.current_filter = (size_t)filter_destination_index;
-        state.selected_object = nullptr;
+        // Select the now-moved filter (TODO: Except that it might not have been moved...?)
+        state.selection.SelectFilter(
+            (size_t)filter_destination_index,
+            state.filters[(size_t)filter_destination_index]
+        );
         Json::SaveLinksJson();
     }
 
     if (move_destination_indexes[0] >= 0 && move_destination_indexes[1] >= 0) {
+        // TODO: I'm pretty sure this unconditionally makes a copy. Why?
         // TODO: This is gross.
         auto leaf_temp = state.filters[
             (size_t)state.move_indexes[0]
@@ -1107,32 +1227,46 @@ void LauncherLinksUiUpdate() {
         auto& destination_leaves = state.filters[(size_t)move_destination_indexes[0]].leaves;
 
         if (state.move_indexes[0] != move_destination_indexes[0]) {
-            for (auto& leaf : destination_leaves) {
+            for (auto const& leaf : destination_leaves) {
                 if (leaf.name == leaf_temp.name) {
-                    state.ui_action = UiAction::ErrorDuplicate;
+                    state.ui_action = UiAction::ErrorDuplicateName;
                     break;
                 }
             }
         }
 
-        if (state.ui_action != UiAction::ErrorDuplicate) {
+        if (state.ui_action != UiAction::ErrorDuplicateName) {
             if (state.move_indexes[0] == move_destination_indexes[0]) {
                 // Source and destination filters are the same
+                // TODO: This can probably be a rotate?
                 if (move_destination_indexes[1] > state.move_indexes[1]) {
-                    destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1] + 1, leaf_temp);
+                    destination_leaves.insert(
+                        destination_leaves.begin() + move_destination_indexes[1] + 1,
+                        std::move(leaf_temp)
+                    );
                     source_leaves.erase(source_leaves.begin() + state.move_indexes[1]);
                 } else {
-                    destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1], leaf_temp);
+                    destination_leaves.insert(
+                        destination_leaves.begin() + move_destination_indexes[1],
+                        std::move(leaf_temp)
+                    );
                     source_leaves.erase(source_leaves.begin() + state.move_indexes[1] + 1);
                 }
             } else {
                 // Source and destination filters are different
-                destination_leaves.insert(destination_leaves.begin() + move_destination_indexes[1], leaf_temp);
+                destination_leaves.insert(
+                    destination_leaves.begin() + move_destination_indexes[1],
+                    std::move(leaf_temp)
+                );
                 source_leaves.erase(source_leaves.begin() + state.move_indexes[1]);
             }
-            state.current_filter = (size_t)move_destination_indexes[0];
-            state.current_leaf = (size_t)move_destination_indexes[1];
-            state.selected_object = &destination_leaves[(size_t)move_destination_indexes[1]];
+
+            // Select the now-moved leaf (TODO: Except that it might not have been moved...?)
+            state.selection.SelectLeaf(
+                (size_t)move_destination_indexes[0],
+                (size_t)move_destination_indexes[1],
+                destination_leaves[(size_t)move_destination_indexes[1]]
+            );
         }
     }
 
