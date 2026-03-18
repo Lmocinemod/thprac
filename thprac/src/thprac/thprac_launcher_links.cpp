@@ -27,6 +27,41 @@
 // `links.json`, and not `filters.json` or `leaves.json` as one might expect.
 // TODO: Standardize around a better set of names. Maybe "Groups" that contain "Links"?
 
+#pragma region Constants
+
+constexpr size_t INPUT_CHARS_MAX = 1024;
+
+constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
+constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END;
+constexpr auto JSON_KEY_IS_OPEN = "__is_open__";
+
+constexpr auto DEFAULT_FILTER_NAME = "Default"; // TODO: Make this localizable?
+constexpr size_t N_DEFAULT_FILTER_LEAVES = 11;
+constexpr const char* DEFAULT_FILTER_LEAVES[N_DEFAULT_FILTER_LEAVES][2] = {
+    // TODO: Make these names localizable?
+    {"Royalflare Archive", "https://maribelhearn.com/royalflare/"},
+    {"PND's Scoreboard", "https://thscore.pndsng.com/index.php"},
+    {"甜品站 (isndes)", "https://www.isndes.com/"},
+    {"Lunarcast", "http://replay.lunarcast.net/"},
+    {"Silent Selene", "https://www.silentselene.net/"},
+    {"Maribel Hearn's Touhou Portal", "https://maribelhearn.com/"},
+    {"Touhou Patch Center", "https://www.thpatch.net/"},
+    {"Touhou Replay Showcase", "https://twitch.tv/touhou_replay_showcase/"},
+    {"Touhou World Cup", "https://touhouworldcup.com/"},
+    {"THBWiki", "https://thwiki.cc/"},
+    {"Touhou Wiki (EN)", "https://en.touhouwiki.net/"}
+};
+
+constexpr auto LABEL_INPUT_NAME = "##__input_name";
+constexpr auto LABEL_INPUT_TARGET = "##__input_target";
+constexpr auto LABEL_INPUT_TARGET_PARAMETERS = "##__input_target_parameteres";
+constexpr auto LABEL_LINKS = "##links";
+constexpr auto LABEL_COL_FILTERS = "##@__col_filters";
+constexpr auto LABEL_DND_LINK_FILTER = "##@__dnd_link_filter";
+constexpr auto LABEL_DND_LINK_LEAF = "##@__dnd_link_leaf";
+
+#pragma endregion // Constants
+
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
 namespace Utils {
@@ -370,7 +405,6 @@ public:
     }
 };
 
-constexpr size_t INPUT_CHARS_MAX = 1024;
 struct THLinksPageState {
     std::vector<Filter> filters;
     UiAction ui_action = UiAction::None;
@@ -397,27 +431,6 @@ static THLinksPageState state;
 #pragma endregion // GlobalMutableState
 
 namespace Json {
-constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
-constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END;
-
-constexpr auto KEY_DEFAULT = "Default";
-constexpr auto KEY_IS_OPEN = "__is_open__";
-
-constexpr size_t N_DEFAULT_FILTER_LEAVES = 11;
-constexpr const char* DEFAULT_FILTER_LEAVES[N_DEFAULT_FILTER_LEAVES][2] = {
-    // TODO: Make these names localizable?
-    {"Royalflare Archive", "https://maribelhearn.com/royalflare/"},
-    {"PND's Scoreboard", "https://thscore.pndsng.com/index.php"},
-    {"甜品站 (isndes)", "https://www.isndes.com/"},
-    {"Lunarcast", "http://replay.lunarcast.net/"},
-    {"Silent Selene", "https://www.silentselene.net/"},
-    {"Maribel Hearn's Touhou Portal", "https://maribelhearn.com/"},
-    {"Touhou Patch Center", "https://www.thpatch.net/"},
-    {"Touhou Replay Showcase", "https://twitch.tv/touhou_replay_showcase/"},
-    {"Touhou World Cup", "https://touhouworldcup.com/"},
-    {"THBWiki", "https://thwiki.cc/"},
-    {"Touhou Wiki (EN)", "https://en.touhouwiki.net/"}
-};
 
 static const std::wstring& GetLinksJsonFilePath() {
     static std::wstring path;
@@ -469,7 +482,7 @@ static void SaveLinksJson() {
 
     for (auto const& filter : state.filters) {
         auto filter_obj = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, filter_obj, KEY_IS_OPEN, filter.is_open);
+        yyjson_mut_obj_add_bool(doc, filter_obj, JSON_KEY_IS_OPEN, filter.is_open);
         for (auto const& leaf : filter.leaves) {
             yyjson_mut_obj_add_str(doc, filter_obj, leaf.name.c_str(), leaf.target.c_str());
         }
@@ -487,12 +500,12 @@ static void ResetLinksJsonToDefault() {
     if (default_ == nullptr) {
         PanicOutOfMemory();
     }
-    yyjson_mut_obj_add_bool(doc, default_, KEY_IS_OPEN, true);
+    yyjson_mut_obj_add_bool(doc, default_, JSON_KEY_IS_OPEN, true);
     for (size_t i = 0; i < N_DEFAULT_FILTER_LEAVES; i++) {
         auto [k, v] = DEFAULT_FILTER_LEAVES[i];
         yyjson_mut_obj_add_str(doc, default_, k, v);
     }
-    yyjson_mut_obj_add_val(doc, root, KEY_DEFAULT, default_);
+    yyjson_mut_obj_add_val(doc, root, DEFAULT_FILTER_NAME, default_);
 
     WriteJsonDocToLinksJson(doc);
 }
@@ -509,7 +522,7 @@ static void LoadDefaultFilterAndLeaves() {
         });
     }
     state.filters.push_back(Filter {
-        .name = KEY_DEFAULT,
+        .name = DEFAULT_FILTER_NAME,
         .leaves = std::move(leaves),
         .is_open = true,
     });
@@ -575,7 +588,7 @@ static void LoadLinksJson() {
         yyjson_val* leaf_k;
         yyjson_val* leaf_v;
         yyjson_obj_foreach(filter_v, leaf_i, leaf_max, leaf_k, leaf_v) {
-            bool k_is_is_open = strcmp(yyjson_get_str(leaf_k), KEY_IS_OPEN) == 0;
+            bool k_is_is_open = strcmp(yyjson_get_str(leaf_k), JSON_KEY_IS_OPEN) == 0;
             if (k_is_is_open && yyjson_is_bool(leaf_v)) {
                 filter.is_open = unsafe_yyjson_get_bool(leaf_v);
             } else if (!k_is_is_open && yyjson_is_str(leaf_v)) {
@@ -724,7 +737,7 @@ static EditResult EditPopupMain() {
     ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##__input_name", state.input_name, INPUT_CHARS_MAX)) {
+    if (ImGui::InputText(LABEL_INPUT_NAME, state.input_name, INPUT_CHARS_MAX)) {
         if (
             state.input_error == EditError::MissingName
             || state.input_error == EditError::DuplicateName
@@ -737,7 +750,7 @@ static EditResult EditPopupMain() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
     if (state.input_target_type == TargetType::Url) {
-        if (ImGui::InputText("##__input_target", state.input_target, INPUT_CHARS_MAX)) {
+        if (ImGui::InputText(LABEL_INPUT_TARGET, state.input_target, INPUT_CHARS_MAX)) {
             if (state.input_error == EditError::MissingTarget) {
                 state.input_error = EditError::Ok;
             }
@@ -749,7 +762,11 @@ static EditResult EditPopupMain() {
         ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_PARAM));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputText("##__input_target_parameters", state.input_target_parameters, INPUT_CHARS_MAX);
+        ImGui::InputText(
+            LABEL_INPUT_TARGET_PARAMETERS,
+            state.input_target_parameters,
+            INPUT_CHARS_MAX
+        );
     }
 
     EditPopupShowErrorIfApplicable(state.input_error);
@@ -928,7 +945,7 @@ static void HandleUiAction() {
         ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::InputText("##__input_name", state.input_name, INPUT_CHARS_MAX)) {
+        if (ImGui::InputText(LABEL_INPUT_NAME, state.input_name, INPUT_CHARS_MAX)) {
             if (
                 state.input_error == EditError::MissingName
                 || state.input_error == EditError::DuplicateName
@@ -1061,7 +1078,7 @@ void LauncherLinksUiUpdate() {
         page_initialized = true;
     }
 
-    ImGui::BeginChild("##links");
+    ImGui::BeginChild(LABEL_LINKS);
     defer(ImGui::EndChild());
 
     // TODO: Don't use -1 to mean "invalid index".
@@ -1078,7 +1095,7 @@ void LauncherLinksUiUpdate() {
         Gui::TextCentered(S(THPRAC_GAMES_MISSING), ImGui::GetWindowWidth());
         return;
     }
-    ImGui::Columns(2, "##@__col_filters", true, true);
+    ImGui::Columns(2, LABEL_COL_FILTERS, true, true);
 
     for (size_t filter_i = 0; filter_i < state.filters.size(); filter_i++) {
         auto const& filter = state.filters[filter_i];
@@ -1091,21 +1108,21 @@ void LauncherLinksUiUpdate() {
         if (ImGui::BeginDragDropSource()) {
             state.filter_move_index = (int)filter_i;
             ImGui::SetDragDropPayload(
-                "##@__dnd_link_filter",
+                LABEL_DND_LINK_FILTER,
                 &state.move_indexes, // ???
                 sizeof(state.move_indexes)
             );
             ImGui::EndDragDropSource();
         }
         if (ImGui::BeginDragDropTarget()) {
-            auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_filter");
+            auto payload = ImGui::AcceptDragDropPayload(LABEL_DND_LINK_FILTER);
             if (payload != nullptr) {
                 filter_destination_index = (int)filter_i;
             }
             ImGui::EndDragDropTarget();
         }
         if (ImGui::BeginDragDropTarget()) {
-            auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_leaf");
+            auto payload = ImGui::AcceptDragDropPayload(LABEL_DND_LINK_LEAF);
             if (payload != nullptr) {
                 move_destination_indexes[0] = (int)filter_i;
                 move_destination_indexes[1] = 0;
@@ -1151,14 +1168,14 @@ void LauncherLinksUiUpdate() {
                     state.move_indexes[0] = (int)filter_i;
                     state.move_indexes[1] = (int)leaf_i;
                     ImGui::SetDragDropPayload(
-                        "##@__dnd_link_leaf",
+                        LABEL_DND_LINK_LEAF,
                         &state.move_indexes, // ???
                         sizeof(state.move_indexes)
                     );
                     ImGui::EndDragDropSource();
                 }
                 if (ImGui::BeginDragDropTarget()) {
-                    auto payload = ImGui::AcceptDragDropPayload("##@__dnd_link_leaf");
+                    auto payload = ImGui::AcceptDragDropPayload(LABEL_DND_LINK_LEAF);
                     if (payload != nullptr) {
                         move_destination_indexes[0] = (int)filter_i;
                         move_destination_indexes[1] = (int)leaf_i;
