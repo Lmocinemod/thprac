@@ -1132,10 +1132,6 @@ void LauncherLinksUiUpdate() {
 
         if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnFilter)) {
             state.selection.SelectFilter(filter_i, filter);
-        } else if (state.selection.Is(filter)) {
-            // TODO: Is this correct? Wouldn't this just unconditionally deselect whenever a context
-            // menu isn't open?
-            // state.selection.Deselect();
         }
         ImGui::NextColumn();
         ImGui::NextColumn();
@@ -1197,8 +1193,6 @@ void LauncherLinksUiUpdate() {
         if (filter.is_open != filter_is_open) {
             filter.is_open = filter_is_open; // This is why .is_open is mutable
             Json::SaveLinksJson();
-            // TODO: Is this correct? Why are we deselecting everything when we open/close filters?
-            // state.selection.Deselect();
             state.selection.SelectFilter(filter_i, filter); // Select the filter we clicked on
         }
     }
@@ -1287,6 +1281,19 @@ void LauncherLinksUiUpdate() {
         }
     }
 
+    if (
+        ImGui::IsWindowFocused() && ImGui::IsWindowHovered()
+        && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered()
+        && !ImGui::IsAnyItemActive() && !ImGui::IsAnyItemFocused()
+    ) {
+        // User clicked the background - clear selection
+        state.selection.Deselect();
+    }
+
     Gui::HandleUiAction();
+}
+
+void LauncherLinksInformPageSwitched() {
+    state.selection.Deselect();
 }
 } // namespace THPrac

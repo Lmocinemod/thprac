@@ -2,4 +2,5 @@
 
 namespace THPrac {
 void LauncherLinksUiUpdate();
+void LauncherLinksInformPageSwitched();
 }
