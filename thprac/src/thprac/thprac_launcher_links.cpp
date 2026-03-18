@@ -1101,9 +1101,10 @@ void LauncherLinksUiUpdate() {
         auto const& filter = state.filters[filter_i];
 
         ImGui::SetNextItemOpen(filter.is_open, ImGuiCond_FirstUseEver);
-        auto filter_flags = (state.selection.Is(filter))
-            ? ImGuiTreeNodeFlags_Selected
-            : ImGuiTreeNodeFlags_None;
+        int filter_flags = ImGuiTreeNodeFlags_SpanAvailWidth;
+        if (state.selection.Is(filter)) {
+            filter_flags |= ImGuiTreeNodeFlags_Selected;
+        }
         auto filter_is_open = ImGui::TreeNodeEx(filter.name.c_str(), filter_flags);
         if (ImGui::BeginDragDropSource()) {
             state.filter_move_index = (int)filter_i;
