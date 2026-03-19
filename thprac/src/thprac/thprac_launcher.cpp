@@ -185,7 +185,7 @@ void UiUpdate(HWND hwnd) {
         LauncherGamesMain();
         ImGui::EndTabItem();
         // LauncherCloseHotkeyRebindListeners();
-        LauncherLinksInformPageSwitched();
+        LauncherLinksInformPageClosing();
     }
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_LINKS))) {
         LauncherLinksUiUpdate();
@@ -198,13 +198,13 @@ void UiUpdate(HWND hwnd) {
         ImGui::EndChild();
         ImGui::EndTabItem();
         // LauncherCloseHotkeyRebindListeners();
-        LauncherLinksInformPageSwitched();
+        LauncherLinksInformPageClosing();
     }
     if (ImGui::BeginTabItem(S(THPRAC_LAUNCHER_TAB_CONFG))) {
         GuiSettings();
         ImGui::EndTabItem();
         // LauncherCloseHotkeyRebindListeners();
-        LauncherLinksInformPageSwitched();
+        LauncherLinksInformPageClosing();
     }
     ImGui::EndTabBar();
 

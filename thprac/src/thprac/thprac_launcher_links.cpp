@@ -249,14 +249,12 @@ void GuiColumnText(const char* text) {
 }
 } // namespace Utils
 
-struct BaseSelectableObject {};
-
-struct Leaf : BaseSelectableObject {
+struct Leaf {
     std::string name;
     std::string target;
 };
 
-struct Filter : BaseSelectableObject {
+struct Filter {
     std::string name;
     std::vector<Leaf> leaves;
     mutable bool is_open = false;
@@ -269,7 +267,7 @@ enum class UiAction {
     DeleteLeaf,
     AddFilter,
     DeleteFilter,
-    RestoreDefaultFilters,
+    RestoreDefaultFilter,
     ErrorDuplicateName,
     ErrorExecutingTarget,
 };
@@ -407,6 +405,7 @@ public:
 };
 
 struct THLinksPageState {
+    bool page_active = false;
     std::vector<Filter> filters;
     UiAction ui_action = UiAction::None;
     Selection selection;
@@ -445,6 +444,8 @@ static const std::wstring& GetLinksJsonFilePath() {
     return path;
 }
 
+// TODO: This function is only called by SaveLinksJson() and ResetLinksJsonToDefault(). If the
+// latter gets removed, this one should be inlined into the former.
 static std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
     auto doc = yyjson_mut_doc_new(nullptr);
     if (doc == nullptr) {
@@ -458,6 +459,8 @@ static std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
     return std::pair(doc, root);
 }
 
+// TODO: This function is only called by SaveLinksJson() and ResetLinksJsonToDefault(). If the
+// latter gets removed, this one should be inlined into the former.
 static void WriteJsonDocToLinksJson(yyjson_mut_doc* doc) {
     FILE* f;
     auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"wb");
@@ -493,6 +496,9 @@ static void SaveLinksJson() {
     WriteJsonDocToLinksJson(doc);
 }
 
+// TODO: This function is kind of redundant, since a call to this can be replaced with a call to
+// LoadDefaultFilterAndLeaves() followed by SaveLinksJson() - except that those functions don't
+// unconditionally overwrite any existing filters, which might be preferable anyway.
 static void ResetLinksJsonToDefault() {
     auto [doc, root] = NewJsonDoc();
     defer(yyjson_mut_doc_free(doc));
@@ -805,30 +811,36 @@ static EditResult EditPopupMain() {
     ImGui::SameLine();
 
     auto button_clicked = CornerOkCancelButtons();
-    if (button_clicked == Utils::ButtonResult::LeftPressed) {
-        if (strnlen_s(state.input_name, INPUT_CHARS_MAX) == 0) {
-            state.input_error = EditError::MissingName;
-        } else if (strnlen_s(state.input_target, INPUT_CHARS_MAX) == 0) {
-            state.input_error = EditError::MissingTarget;
-        } else if (strcmp(state.input_name, "__is_open__") == 0) {
-            state.input_error = EditError::ReservedName;
-        } else if (state.selection.Exists()) {
-            auto const& current_filter = state.filters[state.selection.GetFilterInfo().i];
-            for (auto const& leaf : current_filter.leaves) {
-                if (leaf.name == state.input_name) {
-                    state.input_error = EditError::DuplicateName;
-                    break;
-                }
-            }
-        }
-        if (state.input_error != EditError::Ok) {
-            return EditResult::InProgress;
-        }
-        return EditResult::Complete;
+    if (button_clicked == Utils::ButtonResult::NonePressed) {
+        return EditResult::InProgress;
     } else if (button_clicked == Utils::ButtonResult::RightPressed) {
+        // User clicked "Cancel"
         return EditResult::Cancelled;
     }
-    return EditResult::InProgress;
+    // User clicked "OK"
+    if (strnlen_s(state.input_name, INPUT_CHARS_MAX) == 0) {
+        state.input_error = EditError::MissingName;
+    } else if (strnlen_s(state.input_target, INPUT_CHARS_MAX) == 0) {
+        state.input_error = EditError::MissingTarget;
+    } else if (strncmp(state.input_name, JSON_KEY_IS_OPEN, INPUT_CHARS_MAX) == 0) {
+        state.input_error = EditError::ReservedName;
+    } else if (state.selection.Exists()) {
+        auto const& current_filter = state.filters[state.selection.GetFilterInfo().i];
+        for (auto const& leaf : current_filter.leaves) {
+            if (state.selection.Is(leaf)) {
+                // Don't error for a "duplicate" of the leaf we're editing.
+                continue;
+            }
+            if (leaf.name == state.input_name) {
+                state.input_error = EditError::DuplicateName;
+                break;
+            }
+        }
+    }
+    if (state.input_error != EditError::Ok) {
+        return EditResult::InProgress;
+    }
+    return EditResult::Complete;
 }
 
 // TODO: Maybe this should take a UiAction parameter instead of reading global state? The reset to
@@ -865,7 +877,7 @@ static void HandleUiAction() {
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
         break;
-    case UiAction::RestoreDefaultFilters:
+    case UiAction::RestoreDefaultFilter:
         Json::ResetLinksJsonToDefault();
         Json::LoadDefaultFilterAndLeaves();
         break;
@@ -1069,7 +1081,7 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
             state.ui_action = UiAction::AddFilter;
         }
         if (state.filters.size() == 0 && ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
-            state.ui_action = UiAction::RestoreDefaultFilters;
+            state.ui_action = UiAction::RestoreDefaultFilter;
         }
         ImGui::EndPopup();
         return true;
@@ -1077,13 +1089,14 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
 }
 } // namespace Gui
 
-// TODO: Rename this function to match the other pages' convention.
 void LauncherLinksUiUpdate() {
+    // TODO: Rename this function to match the other pages' convention.
     static bool page_initialized = false;
     if (!page_initialized) [[unlikely]] {
         Json::LoadLinksJson();
         page_initialized = true;
     }
+    state.page_active = true;
 
     ImGui::BeginChild(LABEL_LINKS);
     defer(ImGui::EndChild());
@@ -1312,7 +1325,11 @@ void LauncherLinksUiUpdate() {
     }
 }
 
-void LauncherLinksInformPageSwitched() {
+void LauncherLinksInformPageClosing() {
+    if (!state.page_active) [[likely]] {
+        return;
+    }
     state.selection.Deselect();
+    state.page_active = false;
 }
 } // namespace THPrac
