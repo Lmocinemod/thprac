@@ -11,7 +11,7 @@
 #include <string.h>
 #include <yyjson.h>
 
-#include <cstdlib>
+#include <array>
 // TODO: std::format() apparently adds 0.3MB to the binary size, so replace it before upstreaming.
 #include <format>
 #include <optional>
@@ -31,9 +31,16 @@
 
 constexpr size_t INPUT_CHARS_MAX = 1024;
 
+[[maybe_unused]] constexpr size_t JSON_FORMAT_VERSION = 1;
 constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
 constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END;
+constexpr auto JSON_KEY_METADATA = "__metadata__";
 constexpr auto JSON_KEY_IS_OPEN = "__is_open__";
+
+constexpr std::array<const char*, 2> RESERVED_NAMES = {
+    JSON_KEY_METADATA,
+    JSON_KEY_IS_OPEN,
+};
 
 constexpr auto DEFAULT_FILTER_NAME = "Default"; // TODO: Make this localizable?
 constexpr size_t N_DEFAULT_FILTER_LEAVES = 11;
@@ -61,6 +68,12 @@ constexpr auto LABEL_DND_LINK_FILTER = "##@__dnd_link_filter";
 constexpr auto LABEL_DND_LINK_LEAF = "##@__dnd_link_leaf";
 
 #pragma endregion // Constants
+
+// TODO: Move these to thprac_games_def.json
+namespace UiStr {
+constexpr auto THPRAC_LINKS_FILTER_RENAME = "Rename filter";
+constexpr auto THPRAC_LINKS_FILTER_RENAME_MODAL = "Rename filter##modal";
+}
 
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
@@ -266,6 +279,7 @@ enum class UiAction {
     EditLeaf,
     DeleteLeaf,
     AddFilter,
+    RenameFilter,
     DeleteFilter,
     RestoreDefaultFilter,
     ErrorDuplicateName,
@@ -325,7 +339,7 @@ private:
         const Leaf* leaf;
     } m_target_ptr = {.filter = nullptr};
 
-    [[noreturn]] void PanicConstraintViolation(const char* method_name) {
+    [[noreturn]] void PanicConstraintViolation(const char* method_name) const {
         auto message = std::format(
             "CONSTRAINT VIOLATION: Attempt to call Selection.{}() while no selection exists",
             method_name
@@ -354,7 +368,7 @@ public:
         m_leaf_i = std::nullopt;
     }
 
-    bool Exists() {
+    bool Exists() const {
         // These branches do the same thing, but both must be present to avoid UB.
         if (m_is_leaf) {
             return m_target_ptr.leaf != nullptr;
@@ -362,27 +376,27 @@ public:
             return m_target_ptr.filter != nullptr;
         }
     }
-    bool ExistsAndIsLeaf() {
+    bool ExistsAndIsLeaf() const {
         if (!Exists()) {
             return false;
         }
         return m_is_leaf;
     }
 
-    bool Is(Filter const& filter) {
+    bool Is(Filter const& filter) const {
         if (m_is_leaf) {
             return false;
         }
         return m_target_ptr.filter == &filter;
     }
-    bool Is(Leaf const& leaf) {
+    bool Is(Leaf const& leaf) const {
         if (!m_is_leaf) {
             return false;
         }
         return m_target_ptr.leaf == &leaf;
     }
 
-    SelectedFilterInfo GetFilterInfo() {
+    SelectedFilterInfo GetFilterInfo() const {
         if (!Exists()) {
             PanicConstraintViolation("GetFilterInfo");
         }
@@ -392,7 +406,7 @@ public:
             .is_selected = !m_is_leaf,
         };
     }
-    SelectedLeafInfo GetLeafInfo() {
+    SelectedLeafInfo GetLeafInfo() const {
         if (!Exists() || !m_is_leaf) {
             PanicConstraintViolation("GetLeafInfo");
         }
@@ -422,7 +436,7 @@ struct THLinksPageState {
     char input_name[INPUT_CHARS_MAX];
     char input_target[INPUT_CHARS_MAX];
     char input_target_parameters[INPUT_CHARS_MAX];
-    // These are used exclusively by ClearEditPopupState(), EditPopupMain(), and HandleUiAction()
+    // These are used exclusively by ClearEditPopupState(), EditLeafPopupMain(), EditFilterPopupMain(), and HandleUiAction()
     TargetType input_target_type = TargetType::Url;
     EditError input_error = EditError::Ok;
 };
@@ -619,6 +633,21 @@ static void LoadLinksJson() {
 }
 } // namespace Json
 
+static bool NameIsReserved(const char* name) {
+    for (auto reserved : RESERVED_NAMES) {
+        if (strncmp(name, reserved, INPUT_CHARS_MAX) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool LastEditErrorWasNameRelated() {
+    return state.input_error == EditError::MissingName
+        || state.input_error == EditError::DuplicateName
+        || state.input_error == EditError::ReservedName;
+}
+
 static void ToggleFilterOpenState(Filter const& filter) {
     filter.is_open = !filter.is_open; // This is why .is_open is mutable
     Json::SaveLinksJson();
@@ -745,15 +774,13 @@ enum class EditResult {
     Complete,
     Cancelled,
 };
-static EditResult EditPopupMain() {
+static EditResult EditLeafPopupMain() {
     ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputText(LABEL_INPUT_NAME, state.input_name, INPUT_CHARS_MAX)) {
-        if (
-            state.input_error == EditError::MissingName
-            || state.input_error == EditError::DuplicateName
-        ) {
+        // User changed the name
+        if (LastEditErrorWasNameRelated()) {
             state.input_error = EditError::Ok;
         }
     }
@@ -780,7 +807,6 @@ static EditResult EditPopupMain() {
             INPUT_CHARS_MAX
         );
     }
-
     EditPopupShowErrorIfApplicable(state.input_error);
 
     if (ImGui::Button(S(THPRAC_LINKS_EDIT_FILE))) {
@@ -822,9 +848,11 @@ static EditResult EditPopupMain() {
         state.input_error = EditError::MissingName;
     } else if (strnlen_s(state.input_target, INPUT_CHARS_MAX) == 0) {
         state.input_error = EditError::MissingTarget;
-    } else if (strncmp(state.input_name, JSON_KEY_IS_OPEN, INPUT_CHARS_MAX) == 0) {
+    } else if (NameIsReserved(state.input_name)) {
         state.input_error = EditError::ReservedName;
     } else if (state.selection.Exists()) {
+        // TODO: It shouldn't be possible for a selection to NOT exist, because this function should
+        // only be called if something is already selected.
         auto const& current_filter = state.filters[state.selection.GetFilterInfo().i];
         for (auto const& leaf : current_filter.leaves) {
             if (state.selection.Is(leaf)) {
@@ -842,16 +870,59 @@ static EditResult EditPopupMain() {
     }
     return EditResult::Complete;
 }
+static EditResult EditFilterPopupMain() {
+    ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::InputText(LABEL_INPUT_NAME, state.input_name, INPUT_CHARS_MAX)) {
+        // User changed the name
+        if (LastEditErrorWasNameRelated()) {
+            state.input_error = EditError::Ok;
+        }
+    }
+    EditPopupShowErrorIfApplicable(state.input_error);
+
+    auto button_clicked = CornerOkCancelButtons();
+    if (button_clicked == Utils::ButtonResult::NonePressed) {
+        return EditResult::InProgress;
+    } else if (button_clicked == Utils::ButtonResult::RightPressed) {
+        // User clicked "Cancel"
+        return EditResult::Cancelled;
+    }
+    // User clicked "OK"
+    if (strnlen_s(state.input_name, INPUT_CHARS_MAX) == 0) {
+        state.input_error = EditError::MissingName;
+    } else if (NameIsReserved(state.input_name)) {
+        state.input_error = EditError::ReservedName;
+    } else {
+        for (auto const& filter : state.filters) {
+            if (state.selection.Is(filter)) {
+                // Don't error for a "duplicate" of the filter we're editing.
+                continue;
+            }
+            if (filter.name == state.input_name) {
+                state.input_error = EditError::DuplicateName;
+                break;
+            }
+        }
+    }
+    if (state.input_error != EditError::Ok) {
+        return EditResult::InProgress;
+    }
+    return EditResult::Complete;
+}
 
 // TODO: Maybe this should take a UiAction parameter instead of reading global state? The reset to
 // UiAction::None should be handled by the caller.
 static void HandleUiAction() {
     th_glossary_t popup_str_id = A0000ERROR_C;
+    const char* temporary_popup_str = nullptr;
     switch (state.ui_action) {
     case UiAction::None:
         break;
     case UiAction::AddLeaf:
         ClearEditPopupState();
+        // TODO: Not THPRAC_LINKS_ADD_MODAL?
         popup_str_id = THPRAC_LINKS_ADD;
         break;
     case UiAction::EditLeaf:
@@ -861,10 +932,11 @@ static void HandleUiAction() {
             auto const& leaf = state.filters[filter_index].leaves[leaf_index];
             auto info = GetTargetInfo(leaf.target);
             state.input_target_type = info.type;
-            strcpy_s(state.input_name, leaf.name.c_str());
-            strcpy_s(state.input_target, info.file.c_str());
-            strcpy_s(state.input_target_parameters, info.parameters.c_str());
+            strncpy_s(state.input_name, leaf.name.c_str(), INPUT_CHARS_MAX);
+            strncpy_s(state.input_target, info.file.c_str(), INPUT_CHARS_MAX);
+            strncpy_s(state.input_target_parameters, info.parameters.c_str(), INPUT_CHARS_MAX);
         }
+        // TODO: Not THPRAC_LINKS_EDIT_MODAL?
         popup_str_id = THPRAC_LINKS_EDIT;
         break;
     case UiAction::DeleteLeaf:
@@ -873,6 +945,15 @@ static void HandleUiAction() {
     case UiAction::AddFilter:
         ClearEditPopupState();
         popup_str_id = THPRAC_LINKS_FILTER_ADD_MODAL;
+        break;
+    case UiAction::RenameFilter:
+        ClearEditPopupState();
+        {
+            auto const& filter = state.filters[state.selection.GetFilterInfo().i];
+            strncpy_s(state.input_name, filter.name.c_str(), INPUT_CHARS_MAX);
+        }
+        // popup_str_id = THPRAC_LINKS_FILTER_RENAME_MODAL;
+        temporary_popup_str = UiStr::THPRAC_LINKS_FILTER_RENAME_MODAL;
         break;
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
@@ -891,13 +972,15 @@ static void HandleUiAction() {
 
     if (popup_str_id != A0000ERROR_C) {
         ImGui::OpenPopup(S(popup_str_id));
+    } else if (temporary_popup_str != nullptr) {
+        ImGui::OpenPopup(temporary_popup_str);
     }
     state.ui_action = UiAction::None;
 
     // TODO: The bodies of these if statements should probably be their own functions.
     auto modal_size_rel = ImVec2(ImGui::GetIO().DisplaySize.x * 0.9f, 0.0f);
     if (Modal(S(THPRAC_LINKS_ADD), modal_size_rel)) {
-        auto result = EditPopupMain();
+        auto result = EditLeafPopupMain();
         if (result != EditResult::InProgress) {
             if (result == EditResult::Complete) {
                 auto final_target = WrapTarget(
@@ -930,7 +1013,7 @@ static void HandleUiAction() {
     }
 
     if (Modal(S(THPRAC_LINKS_EDIT), modal_size_rel)) {
-        auto result = EditPopupMain();
+        auto result = EditLeafPopupMain();
         if (result != EditResult::InProgress) {
             if (result == EditResult::Complete) {
                 auto final_target = WrapTarget(
@@ -964,30 +1047,9 @@ static void HandleUiAction() {
 
     modal_size_rel = ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, 0.0f);
     if (Modal(S(THPRAC_LINKS_FILTER_ADD_MODAL), modal_size_rel)) {
-        ImGui::TextUnformatted(S(THPRAC_LINKS_EDIT_NAME));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::InputText(LABEL_INPUT_NAME, state.input_name, INPUT_CHARS_MAX)) {
-            if (
-                state.input_error == EditError::MissingName
-                || state.input_error == EditError::DuplicateName
-            ) {
-                state.input_error = EditError::Ok;
-            }
-        }
-        EditPopupShowErrorIfApplicable(state.input_error);
-
-        auto result = CornerOkCancelButtons();
-        if (result == Utils::ButtonResult::LeftPressed) {
-            if (strnlen_s(state.input_name, INPUT_CHARS_MAX) == 0) {
-                state.input_error = EditError::MissingName;
-            } else for (auto const& filter : state.filters) {
-                if (filter.name == state.input_name) {
-                    state.input_error = EditError::DuplicateName;
-                    break;
-                }
-            }
-            if (state.input_error == EditError::Ok) {
+        auto result = EditFilterPopupMain();
+        if (result != EditResult::InProgress) {
+            if (result == EditResult::Complete) {
                 Filter new_filter = {
                     .name = state.input_name,
                     // .leaves = (default)
@@ -1001,9 +1063,20 @@ static void HandleUiAction() {
                 // Select newly-added filter
                 state.selection.SelectFilter(insert_i, state.filters[insert_i]);
                 Json::SaveLinksJson();
-                ImGui::CloseCurrentPopup();
             }
-        } else if (result == Utils::ButtonResult::RightPressed) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (Modal(UiStr::THPRAC_LINKS_FILTER_RENAME_MODAL, modal_size_rel)) {
+        auto result = EditFilterPopupMain();
+        if (result != EditResult::InProgress) {
+            if (result == EditResult::Complete) {
+                auto& filter_to_edit = state.filters[state.selection.GetFilterInfo().i];
+                filter_to_edit.name = state.input_name;
+                Json::SaveLinksJson();
+            }
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -1058,6 +1131,9 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
             }
             ImGui::Separator();
         } else /* ContextMenuType::OnFilter */ {
+            if (ImGui::Selectable(UiStr::THPRAC_LINKS_FILTER_RENAME)) {
+                state.ui_action = UiAction::RenameFilter;
+            }
             if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_DEL))) {
                 state.ui_action = UiAction::DeleteFilter;
             }
