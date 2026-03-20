@@ -31,15 +31,19 @@
 
 constexpr size_t INPUT_CHARS_MAX = 1024;
 
-[[maybe_unused]] constexpr size_t JSON_FORMAT_VERSION = 1;
+// Make sure to increment this when making a breaking change to the JSON structure! (And also add a
+// function that converts the old format to the new one.)
+constexpr int64_t JSON_FILE_VERSION = 1;
 constexpr auto JSON_FILENAME = std::wstring_view(L"links.json");
 constexpr auto JSON_WRITE_FLAGS = YYJSON_WRITE_PRETTY | YYJSON_WRITE_NEWLINE_AT_END;
-constexpr auto JSON_KEY_METADATA = "__metadata__";
 constexpr auto JSON_KEY_IS_OPEN = "__is_open__";
+constexpr auto JSON_KEY_METADATA = "__metadata__";
+// This name isn't reserved, because it's a sub-key of JSON_KEY_METADATA.
+constexpr auto JSON_KEY_METADATA_VERSION = "version";
 
 constexpr std::array<const char*, 2> RESERVED_NAMES = {
-    JSON_KEY_METADATA,
     JSON_KEY_IS_OPEN,
+    JSON_KEY_METADATA,
 };
 
 constexpr auto DEFAULT_FILTER_NAME = "Default"; // TODO: Make this localizable?
@@ -498,6 +502,10 @@ static void SaveLinksJson() {
     auto [doc, root] = NewJsonDoc();
     defer(yyjson_mut_doc_free(doc));
 
+    auto metadata_obj = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_int(doc, metadata_obj, JSON_KEY_METADATA_VERSION, JSON_FILE_VERSION);
+    yyjson_mut_obj_add_val(doc, root, JSON_KEY_METADATA, metadata_obj);
+
     for (auto const& filter : state.filters) {
         auto filter_obj = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_bool(doc, filter_obj, JSON_KEY_IS_OPEN, filter.is_open);
@@ -549,6 +557,8 @@ static void LoadDefaultFilterAndLeaves() {
     });
 }
 
+// TODO: Extract the "read the JSON object" part of this function into a different function, so that
+// the user's old links can be migrated to the new format.
 static void LoadLinksJson() {
     enum class DefaultFilterState {
         KeepPrevious,
@@ -597,6 +607,16 @@ static void LoadLinksJson() {
     yyjson_val* filter_k;
     yyjson_val* filter_v;
     yyjson_obj_foreach(root, filter_i, filter_max, filter_k, filter_v) {
+        if (strcmp(yyjson_get_str(filter_k), JSON_KEY_METADATA) == 0) {
+            // TODO: Parse metadata and version number.
+            //  * If version number is missing, assume version 0.
+            //  * If version number is lower than JSON_FILE_VERSION, auto-upgrade the file. (Make
+            //    sure the file gets saved immediately afterwards in this case!)
+            //  * If version number is HIGHER than JSON_FILE_VERSION, error out, so that we don't
+            //    overwrite any newer configs. (Realistically this should only ever happen to thprac
+            //    devs, but an annoyance is an annoyance.)
+            continue;
+        }
         if (yyjson_get_type(filter_v) != YYJSON_TYPE_OBJ) {
             // Ignore non-object values.
             // TODO: Should a warning be displayed here?
@@ -722,9 +742,6 @@ static bool ExecuteTarget(std::string const& target) {
     case TargetType::NonExecutablePath:
         result = ShellExecuteW(nullptr, nullptr, target_file_w.c_str(), nullptr, nullptr, SW_SHOW);
         break;
-    default:
-        // Should be unreachable
-        return false;
     }
 
     return ((DWORD)result > 32);
@@ -749,6 +766,8 @@ static void ClearEditPopupState() {
 static void EditPopupShowErrorIfApplicable(EditError error) {
     th_glossary_t error_message = A0000ERROR_C;
     switch (error) {
+    case EditError::Ok:
+        break;
     case EditError::MissingName:
         error_message = THPRAC_LINKS_EDIT_ERR_NAME;
         break;
@@ -761,8 +780,6 @@ static void EditPopupShowErrorIfApplicable(EditError error) {
     case EditError::ReservedName:
         error_message = THPRAC_LINKS_EDIT_ERR_RSV;
         break;
-    default:
-        return;
     }
 
     auto red = ImVec4(255.0f, 0.0f, 0.0f, 255.0f);
