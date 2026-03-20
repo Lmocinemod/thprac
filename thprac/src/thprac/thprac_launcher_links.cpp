@@ -723,7 +723,7 @@ static bool ExecuteTarget(std::string const& target) {
     auto target_info = GetTargetInfo(target);
     auto target_file_w = utf8_to_utf16(target_info.file.c_str());
     auto target_parameters_w = utf8_to_utf16(target_info.parameters.c_str());
-    HINSTANCE result;
+    HINSTANCE result = nullptr;
     std::wstring target_directory_w;
 
     switch (target_info.type) {
@@ -744,7 +744,8 @@ static bool ExecuteTarget(std::string const& target) {
         break;
     }
 
-    return ((DWORD)result > 32);
+    constexpr DWORD SUCCESS_THRESHOLD = 32;
+    return ((DWORD)result > SUCCESS_THRESHOLD);
 }
 
 namespace Gui {
