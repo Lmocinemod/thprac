@@ -834,7 +834,12 @@ static EditResult EditLeafPopupMain() {
             // TODO: Is this a safe assumption to make?
             state.input_target_type = TargetType::ExecutablePath;
             state.input_target_parameters[0] = '\0';
-            sprintf_s(state.input_target, "%s", utf16_to_utf8(file_str.c_str()).c_str());
+            sprintf_s(
+                state.input_target,
+                INPUT_CHARS_MAX,
+                "%s",
+                utf16_to_utf8(file_str.c_str()).c_str()
+            );
         }
     }
     ImGui::SameLine();
@@ -843,7 +848,12 @@ static EditResult EditLeafPopupMain() {
         if (maybe_folder.has_value()) {
             state.input_error = EditError::Ok;
             state.input_target_type = TargetType::NonExecutablePath;
-            sprintf_s(state.input_target, "%s", utf16_to_utf8((*maybe_folder).c_str()).c_str());
+            sprintf_s(
+                state.input_target,
+                INPUT_CHARS_MAX,
+                "%s",
+                utf16_to_utf8((*maybe_folder).c_str()).c_str()
+            );
         }
     }
     ImGui::SameLine();
