@@ -77,7 +77,7 @@ constexpr auto LABEL_DND_LINK_LEAF = "##@__dnd_link_leaf";
 namespace UiStr {
 constexpr auto THPRAC_LINKS_FILTER_RENAME = "Rename filter";
 constexpr auto THPRAC_LINKS_FILTER_RENAME_MODAL = "Rename filter##modal";
-}
+} // namespace UiStr
 
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
@@ -427,20 +427,18 @@ struct THLinksPageState {
     std::vector<Filter> filters;
     UiAction ui_action = UiAction::None;
     Selection selection;
-    // BaseSelectableObject* selected_object = nullptr;
-    // size_t current_filter = 0;
-    // size_t current_leaf = 0;
     // TODO: Don't use -1 to mean "invalid index".
     // TODO: Why do these need to be global state, anyway?
     // TODO: Apparently [0] is the index for filters, and [1] for leaves?
     int move_indexes[2] = {-1, -1}; // "moveIdx"
     int filter_move_index = -1; // "filterMoveIdx"
-    // TODO: These aren't properly bounds-checked in several cases. Maybe use strings/arrays instead?
-    // (Maybe also move all the input_* stuff into a sub-struct, which could then have a Reset method.)
+    // TODO: Maybe move all the input_* stuff into a sub-struct, with a Reset() method?
+    // TODO: Verify that these raw buffer shenanigans are correct.
     char input_name[INPUT_CHARS_MAX];
     char input_target[INPUT_CHARS_MAX];
     char input_target_parameters[INPUT_CHARS_MAX];
-    // These are used exclusively by ClearEditPopupState(), EditLeafPopupMain(), EditFilterPopupMain(), and HandleUiAction()
+    // These are used exclusively by ClearEditPopupState(), EditLeafPopupMain(),
+    // EditFilterPopupMain(), and HandleUiAction()
     TargetType input_target_type = TargetType::Url;
     EditError input_error = EditError::Ok;
 };
@@ -449,7 +447,6 @@ static THLinksPageState state;
 #pragma endregion // GlobalMutableState
 
 namespace Json {
-
 static const std::wstring& GetLinksJsonFilePath() {
     static std::wstring path;
     if (path.size() > 0) [[likely]] {
