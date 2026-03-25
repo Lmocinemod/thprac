@@ -1181,7 +1181,7 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
         if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
             state.ui_action = UiAction::AddFilter;
         }
-        if (state.filters.size() == 0 && ImGui::Selectable(S(THPRAC_LINKS_RESET))) {
+        if (state.filters.size() == 0 && ImGui::Selectable(S(THPRAC_LINKS_RESTORE_DEFAULT))) {
             state.ui_action = UiAction::RestoreDefaultFilter;
         }
         ImGui::EndPopup();

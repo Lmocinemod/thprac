@@ -252,7 +252,7 @@
       "THPRAC_TOOLS_RND_TURNTO_GAME": [ "转至游戏页面", "Turn to game page", "ゲームページに移動" ],
 
       "THPRAC_LINKS": [ "链接", "Links", "リンク" ],
-      "THPRAC_LINKS_RESET": [ "重置默认", "Reset default", "デフォルトにリセット" ],
+      "THPRAC_LINKS_RESTORE_DEFAULT": [ "恢复默认链接", "Restore default links", "デフォルトリンクを引き戻す" ],
       "THPRAC_LINKS_ADD": [ "添加链接", "Add link", "リンクを追加" ],
       "THPRAC_LINKS_ADD_MODAL": [ "添加链接##modal", "Add link##modal", "リンクを追加##modal" ],
       "THPRAC_LINKS_EDIT": [ "编辑链接", "Edit link", "リンクを編集" ],
