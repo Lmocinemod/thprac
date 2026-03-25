@@ -773,10 +773,10 @@ static void EditPopupShowErrorIfApplicable(EditError error) {
         error_message = THPRAC_LINKS_EDIT_ERR_LINK;
         break;
     case EditError::DuplicateName:
-        error_message = THPRAC_LINKS_EDIT_ERR_REPEATED;
+        error_message = THPRAC_LINKS_EDIT_ERR_DUPLICATE;
         break;
     case EditError::ReservedName:
-        error_message = THPRAC_LINKS_EDIT_ERR_RSV;
+        error_message = THPRAC_LINKS_EDIT_ERR_RESERVED;
         break;
     }
 
