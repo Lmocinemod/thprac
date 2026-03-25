@@ -755,6 +755,14 @@ inline bool CornerOkButton() {
     return result == Utils::ButtonResult::LeftPressed;
 }
 
+static bool ButtonRestoreDefaultLinksCentered() {
+    auto label = S(THPRAC_LINKS_RESTORE_DEFAULT);
+    float padding = ImGui::GetStyle().FramePadding.x;
+    float button_width = ImGui::CalcTextSize(label).x + (padding * 2.0f);
+    ImGui::SetCursorPosX((ImGui::GetWindowSize().x - button_width) * 0.5f);
+    return ImGui::Button(label);
+}
+
 static void ClearEditPopupState() {
     state.input_target[0] = state.input_name[0] = state.input_target_parameters[0] = '\0';
     state.input_target_type = TargetType::Url;
@@ -1212,9 +1220,11 @@ void LauncherLinksUiUpdate() {
         state.selection.Deselect();
     }
     if (state.filters.size() == 0) {
-        ImGui::SetCursorPosY(ImGui::GetWindowHeight() * 0.5f);
-        // TODO: Some users get confused by this message. Maybe add a "Restore defaults" button here?
+        ImGui::SetCursorPosY(ImGui::GetWindowHeight() * 0.5f - ImGui::GetFontSize());
         Gui::TextCentered(S(THPRAC_GAMES_MISSING), ImGui::GetWindowWidth());
+        if (Gui::ButtonRestoreDefaultLinksCentered()) {
+            state.ui_action = UiAction::RestoreDefaultFilter;
+        }
         return;
     }
     ImGui::Columns(2, LABEL_COL_FILTERS, true, true);
