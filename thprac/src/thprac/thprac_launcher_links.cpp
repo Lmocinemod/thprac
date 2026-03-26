@@ -73,12 +73,6 @@ constexpr auto LABEL_DND_LINK_LEAF = "##@__dnd_link_leaf";
 
 #pragma endregion // Constants
 
-// TODO: Move these to thprac_games_def.json
-namespace UiStr {
-constexpr auto THPRAC_LINKS_FILTER_RENAME = "Rename filter";
-constexpr auto THPRAC_LINKS_FILTER_RENAME_MODAL = "Rename filter##modal";
-} // namespace UiStr
-
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
 namespace Utils {
@@ -939,7 +933,6 @@ static EditResult EditFilterPopupMain() {
 // UiAction::None should be handled by the caller.
 static void HandleUiAction() {
     th_glossary_t popup_str_id = A0000ERROR_C;
-    const char* temporary_popup_str = nullptr;
     switch (state.ui_action) {
     case UiAction::None:
         break;
@@ -975,8 +968,7 @@ static void HandleUiAction() {
             auto const& filter = state.filters[state.selection.GetFilterInfo().i];
             strncpy_s(state.input_name, filter.name.c_str(), INPUT_CHARS_MAX);
         }
-        // popup_str_id = THPRAC_LINKS_FILTER_RENAME_MODAL;
-        temporary_popup_str = UiStr::THPRAC_LINKS_FILTER_RENAME_MODAL;
+        popup_str_id = THPRAC_LINKS_FILTER_RENAME_MODAL;
         break;
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
@@ -995,8 +987,6 @@ static void HandleUiAction() {
 
     if (popup_str_id != A0000ERROR_C) {
         ImGui::OpenPopup(S(popup_str_id));
-    } else if (temporary_popup_str != nullptr) {
-        ImGui::OpenPopup(temporary_popup_str);
     }
     state.ui_action = UiAction::None;
 
@@ -1093,7 +1083,7 @@ static void HandleUiAction() {
         ImGui::EndPopup();
     }
 
-    if (Modal(UiStr::THPRAC_LINKS_FILTER_RENAME_MODAL, modal_size_rel)) {
+    if (Modal(S(THPRAC_LINKS_FILTER_RENAME_MODAL), modal_size_rel)) {
         auto result = EditFilterPopupMain();
         if (result != EditResult::InProgress) {
             if (result == EditResult::Complete) {
@@ -1141,61 +1131,54 @@ static void HandleUiAction() {
     }
 }
 
-enum class ContextMenuType {
-    OnBackground,
-    OnFilter,
-    OnLeaf,
+enum class ContextMenuSource {
+    Background,
+    Filter,
+    Leaf,
 };
-// TODO: Maybe this should return UiAction, instead of mutating global state?
-static bool ShowContextMenuIfApplicable(ContextMenuType type) {
-    // TODO: Refactor this function to be easier to read.
-    if (type == ContextMenuType::OnFilter || type == ContextMenuType::OnLeaf) {
-        if (!ImGui::BeginPopupContextItem()) {
-            return false;
-        }
-
-        if (type == ContextMenuType::OnLeaf) {
-            if (ImGui::Selectable(S(THPRAC_LINKS_EDIT))) {
-                state.ui_action = UiAction::EditLeaf;
-            }
-            if (ImGui::Selectable(S(THPRAC_LINKS_DELETE))) {
-                state.ui_action = UiAction::DeleteLeaf;
-            }
-            ImGui::Separator();
-        } else /* ContextMenuType::OnFilter */ {
-            if (ImGui::Selectable(UiStr::THPRAC_LINKS_FILTER_RENAME)) {
-                state.ui_action = UiAction::RenameFilter;
-            }
-            if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_DEL))) {
-                state.ui_action = UiAction::DeleteFilter;
-            }
-        }
-
-        if (ImGui::Selectable(S(THPRAC_LINKS_ADD))) {
-            state.ui_action = UiAction::AddLeaf;
-        }
-        ImGui::Separator();
-        if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
-            state.ui_action = UiAction::AddFilter;
-        }
-        ImGui::EndPopup();
-        return true;
-    } else /* ContextMenuType::OnBackground */ {
-        // NOTE: Different ImGui call from the other types!
-        if (!ImGui::BeginPopupContextWindow()) {
-            return false;
-        }
-        if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
-            state.ui_action = UiAction::AddFilter;
-        }
-        if (!state.default_filter_i.has_value()) {
-            if (ImGui::Selectable(S(THPRAC_LINKS_RESTORE_DEFAULT))) {
-                state.ui_action = UiAction::RestoreDefaultFilter;
-            }
-        }
-        ImGui::EndPopup();
-        return true;
+static bool ShowContextMenuIfApplicable(ContextMenuSource source) {
+	bool active = false;
+	if (source == ContextMenuSource::Background) {
+		active = ImGui::BeginPopupContextWindow();
+	} else /* ContextMenuSource::Filter || ContextMenuSource::Leaf */ {
+		active = ImGui::BeginPopupContextItem();
+	}
+    if (!active) {
+        return false;
     }
+    defer(ImGui::EndPopup());
+
+    #define OPTION(glossary_id, action) \
+		if (ImGui::Selectable(S(glossary_id))) { \
+			state.ui_action = action; \
+		}
+
+    switch (source) {
+    case ContextMenuSource::Background:
+        OPTION(THPRAC_LINKS_FILTER_ADD, UiAction::AddFilter);
+        if (!state.default_filter_i.has_value()) {
+            OPTION(THPRAC_LINKS_RESTORE_DEFAULT, UiAction::RestoreDefaultFilter);
+        }
+        break;
+    case ContextMenuSource::Filter:
+        OPTION(THPRAC_LINKS_FILTER_RENAME, UiAction::RenameFilter);
+        OPTION(THPRAC_LINKS_FILTER_DEL, UiAction::DeleteFilter);
+        OPTION(THPRAC_LINKS_ADD, UiAction::AddLeaf);
+        ImGui::Separator();
+        OPTION(THPRAC_LINKS_FILTER_ADD, UiAction::AddFilter);
+        break;
+    case ContextMenuSource::Leaf:
+        OPTION(THPRAC_LINKS_EDIT, UiAction::EditLeaf);
+        OPTION(THPRAC_LINKS_DELETE, UiAction::DeleteLeaf);
+        ImGui::Separator();
+        OPTION(THPRAC_LINKS_ADD, UiAction::AddLeaf);
+        ImGui::Separator();
+        OPTION(THPRAC_LINKS_FILTER_ADD, UiAction::AddFilter);
+        break;
+    }
+
+    #undef OPTION
+    return true;
 }
 } // namespace Gui
 
@@ -1218,7 +1201,7 @@ void LauncherLinksUiUpdate() {
     int filter_destination_index = -1; // "filterDestIdx"
 
     defer(Gui::HandleUiAction());
-    if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnBackground)) {
+    if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuSource::Background)) {
         state.selection.Deselect();
     }
     if (state.filters.size() == 0) {
@@ -1283,7 +1266,7 @@ void LauncherLinksUiUpdate() {
             ImGui::EndDragDropTarget();
         }
 
-        if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnFilter)) {
+        if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuSource::Filter)) {
             state.selection.SelectFilter(filter_i, filter);
         }
         ImGui::NextColumn();
@@ -1332,7 +1315,7 @@ void LauncherLinksUiUpdate() {
                     ImGui::EndDragDropTarget();
                 }
 
-                if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuType::OnLeaf)) {
+                if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuSource::Leaf)) {
                     state.selection.SelectLeaf(filter_i, leaf_i, leaf);
                 }
 

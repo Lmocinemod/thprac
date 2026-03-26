@@ -261,6 +261,8 @@
       "THPRAC_LINKS_DELETE_MODAL": [ "删除链接##modal", "Delete link##modal", "リンクを削除##modal" ],
       "THPRAC_LINKS_FILTER_ADD": [ "添加筛选器", "Add filter", "フィルタを追加" ],
       "THPRAC_LINKS_FILTER_ADD_MODAL": [ "添加筛选器##modal", "Add filter##modal", "フィルタを追加##modal" ],
+      "THPRAC_LINKS_FILTER_RENAME": [ "重命名筛选器", "Rename filter", "フィルタを改称" ],
+      "THPRAC_LINKS_FILTER_RENAME_MODAL": [ "重命名筛选器##modal", "Rename filter##modal", "フィルタを改称##modal"],
       "THPRAC_LINKS_FILTER_DEL": [ "删除筛选器", "Delete filter", "フィルタを削除" ],
       "THPRAC_LINKS_FILTER_DEL_MODAL": [ "删除筛选器##modal", "Delete filter##modal", "フィルタを削除##modal" ],
       "THPRAC_LINKS_ERR_MOVE_MODAL": [ "错误##err_link_move", "Error##err_link_move", "エラー##err_link_move" ],
