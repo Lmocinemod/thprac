@@ -478,6 +478,8 @@ static std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
 // latter gets removed, this one should be inlined into the former.
 static void WriteJsonDocToLinksJson(yyjson_mut_doc* doc) {
     FILE* f;
+    // We could theoretically use "w" mode here, since yyjson will happily ignore the CR characters
+    // the next time it reads the file. But there's no real benefit to doing this.
     auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"wb");
     if (io_error != NULL) {
         // TODO: Probably have some kind of retry behavior?
@@ -565,6 +567,9 @@ static void LoadLinksJson() {
     auto filter_state = (DefaultFilterState)Utils::GetLauncherSetting("filter_default").value_or(0);
 
     FILE* f;
+    // We can't use "r" mode, because yyjson_read_fp() expects EOL to be exactly 1 byte in size.
+    // (See yyjson.c:6327, where it compares the number of characters read to the size of the file
+    // in bytes, and errors out because they're not the same.)
     auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"rb");
     if (io_error != NULL) {
         if (io_error == ERROR_FILE_NOT_FOUND) {
@@ -961,8 +966,8 @@ static void HandleUiAction() {
     case UiAction::EditLeaf:
         ClearEditPopupState();
         {
-            auto [filter_index, leaf_index] = state.selection.GetLeafInfo();
-            auto const& leaf = state.filters[filter_index].leaves[leaf_index];
+            auto [filter_i, leaf_i] = state.selection.GetLeafInfo();
+            auto const& leaf = state.filters[filter_i].leaves[leaf_i];
             auto info = GetTargetInfo(leaf.target);
             state.input_target_type = info.type;
             strncpy_s(state.input_name, leaf.name.c_str(), INPUT_CHARS_MAX);
