@@ -322,8 +322,7 @@ static void Debug(const char* message, bool is_error = false) {
     exit(EXIT_FAILURE);
 }
 
-#pragma region GlobalMutableState
-
+namespace GlobalMutableState {
 struct SelectedFilterInfo {
     size_t i;
     bool is_selected;
@@ -422,9 +421,11 @@ public:
     }
 };
 
-struct THLinksPageState {
+struct LinksPageState {
     bool page_active = false;
     std::vector<Filter> filters;
+    // TODO: Manually managing this from outside is probably a bad idea.
+    std::optional<size_t> default_filter_i = std::nullopt;
     UiAction ui_action = UiAction::None;
     Selection selection;
     // TODO: Don't use -1 to mean "invalid index".
@@ -442,9 +443,30 @@ struct THLinksPageState {
     TargetType input_target_type = TargetType::Url;
     EditError input_error = EditError::Ok;
 };
-static THLinksPageState state;
+} // namespace GlobalMutableState
+static GlobalMutableState::LinksPageState state;
 
-#pragma endregion // GlobalMutableState
+static void LoadDefaultFilterAndLeaves() {
+    if (!state.default_filter_i.has_value()) {
+        state.default_filter_i = std::optional(state.filters.size());
+        state.filters.push_back(Filter {
+            .name = DEFAULT_FILTER_NAME,
+            // .leaves = (default)
+            .is_open = true,
+        });
+    }
+
+    auto& filter = state.filters[*state.default_filter_i]; // Guaranteed to not be std::nullopt
+    filter.leaves.clear();
+    filter.leaves.reserve(sizeof(Leaf) * N_DEFAULT_FILTER_LEAVES);
+    for (size_t i = 0; i < N_DEFAULT_FILTER_LEAVES; i++) {
+        auto [name, target] = DEFAULT_FILTER_LEAVES[i];
+        filter.leaves.push_back(Leaf {
+            .name = name,
+            .target = target,
+        });
+    }
+}
 
 namespace Json {
 static const std::wstring& GetLinksJsonFilePath() {
@@ -459,9 +481,7 @@ static const std::wstring& GetLinksJsonFilePath() {
     return path;
 }
 
-// TODO: This function is only called by SaveLinksJson() and ResetLinksJsonToDefault(). If the
-// latter gets removed, this one should be inlined into the former.
-static std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
+static void SaveLinksJson() {
     auto doc = yyjson_mut_doc_new(nullptr);
     if (doc == nullptr) {
         PanicOutOfMemory();
@@ -471,12 +491,23 @@ static std::pair<yyjson_mut_doc*, yyjson_mut_val*> NewJsonDoc() {
         PanicOutOfMemory();
     }
     yyjson_mut_doc_set_root(doc, root);
-    return std::pair(doc, root);
-}
+    defer(yyjson_mut_doc_free(doc));
 
-// TODO: This function is only called by SaveLinksJson() and ResetLinksJsonToDefault(). If the
-// latter gets removed, this one should be inlined into the former.
-static void WriteJsonDocToLinksJson(yyjson_mut_doc* doc) {
+    // Metadata
+    auto metadata_obj = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_int(doc, metadata_obj, JSON_KEY_METADATA_VERSION, JSON_FILE_VERSION);
+    yyjson_mut_obj_add_val(doc, root, JSON_KEY_METADATA, metadata_obj);
+
+    // Filters/leaves
+    for (auto const& filter : state.filters) {
+        auto filter_obj = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_bool(doc, filter_obj, JSON_KEY_IS_OPEN, filter.is_open);
+        for (auto const& leaf : filter.leaves) {
+            yyjson_mut_obj_add_str(doc, filter_obj, leaf.name.c_str(), leaf.target.c_str());
+        }
+        yyjson_mut_obj_add_val(doc, root, filter.name.c_str(), filter_obj);
+    }
+
     FILE* f;
     // We could theoretically use "w" mode here, since yyjson will happily ignore the CR characters
     // the next time it reads the file. But there's no real benefit to doing this.
@@ -497,65 +528,6 @@ static void WriteJsonDocToLinksJson(yyjson_mut_doc* doc) {
     }
 }
 
-static void SaveLinksJson() {
-    auto [doc, root] = NewJsonDoc();
-    defer(yyjson_mut_doc_free(doc));
-
-    auto metadata_obj = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_int(doc, metadata_obj, JSON_KEY_METADATA_VERSION, JSON_FILE_VERSION);
-    yyjson_mut_obj_add_val(doc, root, JSON_KEY_METADATA, metadata_obj);
-
-    for (auto const& filter : state.filters) {
-        auto filter_obj = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, filter_obj, JSON_KEY_IS_OPEN, filter.is_open);
-        for (auto const& leaf : filter.leaves) {
-            yyjson_mut_obj_add_str(doc, filter_obj, leaf.name.c_str(), leaf.target.c_str());
-        }
-        yyjson_mut_obj_add_val(doc, root, filter.name.c_str(), filter_obj);
-    }
-
-    WriteJsonDocToLinksJson(doc);
-}
-
-// TODO: This function is kind of redundant, since a call to this can be replaced with a call to
-// LoadDefaultFilterAndLeaves() followed by SaveLinksJson() - except that those functions don't
-// unconditionally overwrite any existing filters, which might be preferable anyway.
-static void ResetLinksJsonToDefault() {
-    auto [doc, root] = NewJsonDoc();
-    defer(yyjson_mut_doc_free(doc));
-
-    auto default_ = yyjson_mut_obj(doc);
-    if (default_ == nullptr) {
-        PanicOutOfMemory();
-    }
-    yyjson_mut_obj_add_bool(doc, default_, JSON_KEY_IS_OPEN, true);
-    for (size_t i = 0; i < N_DEFAULT_FILTER_LEAVES; i++) {
-        auto [k, v] = DEFAULT_FILTER_LEAVES[i];
-        yyjson_mut_obj_add_str(doc, default_, k, v);
-    }
-    yyjson_mut_obj_add_val(doc, root, DEFAULT_FILTER_NAME, default_);
-
-    WriteJsonDocToLinksJson(doc);
-}
-
-static void LoadDefaultFilterAndLeaves() {
-    state = {};
-    std::vector<Leaf> leaves;
-    leaves.reserve(sizeof(Leaf) * N_DEFAULT_FILTER_LEAVES);
-    for (size_t i = 0; i < N_DEFAULT_FILTER_LEAVES; i++) {
-        auto [name, target] = DEFAULT_FILTER_LEAVES[i];
-        leaves.push_back(Leaf {
-            .name = name,
-            .target = target,
-        });
-    }
-    state.filters.push_back(Filter {
-        .name = DEFAULT_FILTER_NAME,
-        .leaves = std::move(leaves),
-        .is_open = true,
-    });
-}
-
 // TODO: Extract the "read the JSON object" part of this function into a different function, so that
 // the user's old links can be migrated to the new format.
 static void LoadLinksJson() {
@@ -574,8 +546,8 @@ static void LoadLinksJson() {
     if (io_error != NULL) {
         if (io_error == ERROR_FILE_NOT_FOUND) {
             // JSON file doesn't exist, so create it.
-            ResetLinksJsonToDefault();
             LoadDefaultFilterAndLeaves();
+            SaveLinksJson();
             return;
         }
 
@@ -673,6 +645,19 @@ inline bool LastEditErrorWasNameRelated() {
 static void ToggleFilterOpenState(Filter const& filter) {
     filter.is_open = !filter.is_open; // This is why .is_open is mutable
     Json::SaveLinksJson();
+}
+
+static void LocateDefaultFilter() {
+    // TODO: Rather than calling this function every time state.filters is mutated, it might be
+    // worthwhile to put a wrapper class around state.filters, and have it do its own bookkeeping.
+    state.default_filter_i = std::nullopt;
+    for (size_t i = 0; i < state.filters.size(); i++) {
+        const auto& filter = state.filters[i];
+        if (filter.name == DEFAULT_FILTER_NAME) {
+            state.default_filter_i = std::optional(i);
+            break;
+        }
+    }
 }
 
 static bool TargetIsExecutable(const char* target, TargetType type) {
@@ -997,8 +982,8 @@ static void HandleUiAction() {
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
         break;
     case UiAction::RestoreDefaultFilter:
-        Json::ResetLinksJsonToDefault();
-        Json::LoadDefaultFilterAndLeaves();
+        LoadDefaultFilterAndLeaves();
+        Json::SaveLinksJson();
         break;
     case UiAction::ErrorDuplicateName:
         popup_str_id = THPRAC_LINKS_ERR_MOVE_MODAL;
@@ -1101,6 +1086,7 @@ static void HandleUiAction() {
                 // Select newly-added filter
                 state.selection.SelectFilter(insert_i, state.filters[insert_i]);
                 Json::SaveLinksJson();
+                LocateDefaultFilter();
             }
             ImGui::CloseCurrentPopup();
         }
@@ -1112,6 +1098,9 @@ static void HandleUiAction() {
         if (result != EditResult::InProgress) {
             if (result == EditResult::Complete) {
                 auto& filter_to_edit = state.filters[state.selection.GetFilterInfo().i];
+                if (filter_to_edit.name == DEFAULT_FILTER_NAME) {
+                    state.default_filter_i = std::nullopt;
+                }
                 filter_to_edit.name = state.input_name;
                 Json::SaveLinksJson();
             }
@@ -1123,6 +1112,10 @@ static void HandleUiAction() {
     if (Modal(S(THPRAC_LINKS_FILTER_DEL_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_FILTER_DELETE_WARNING));
         if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
+            size_t filter_i = state.selection.GetFilterInfo().i;
+            if (state.filters[filter_i].name == DEFAULT_FILTER_NAME) {
+                state.default_filter_i = std::nullopt;
+            }
             state.filters.erase(state.filters.begin() + (int)state.selection.GetFilterInfo().i);
             // Unclear what should be selected at this point
             state.selection.Deselect();
@@ -1155,6 +1148,7 @@ enum class ContextMenuType {
 };
 // TODO: Maybe this should return UiAction, instead of mutating global state?
 static bool ShowContextMenuIfApplicable(ContextMenuType type) {
+    // TODO: Refactor this function to be easier to read.
     if (type == ContextMenuType::OnFilter || type == ContextMenuType::OnLeaf) {
         if (!ImGui::BeginPopupContextItem()) {
             return false;
@@ -1194,8 +1188,10 @@ static bool ShowContextMenuIfApplicable(ContextMenuType type) {
         if (ImGui::Selectable(S(THPRAC_LINKS_FILTER_ADD))) {
             state.ui_action = UiAction::AddFilter;
         }
-        if (state.filters.size() == 0 && ImGui::Selectable(S(THPRAC_LINKS_RESTORE_DEFAULT))) {
-            state.ui_action = UiAction::RestoreDefaultFilter;
+        if (!state.default_filter_i.has_value()) {
+            if (ImGui::Selectable(S(THPRAC_LINKS_RESTORE_DEFAULT))) {
+                state.ui_action = UiAction::RestoreDefaultFilter;
+            }
         }
         ImGui::EndPopup();
         return true;
@@ -1208,6 +1204,7 @@ void LauncherLinksUiUpdate() {
     static bool page_initialized = false;
     if (!page_initialized) [[unlikely]] {
         Json::LoadLinksJson();
+        LocateDefaultFilter();
         page_initialized = true;
     }
     state.page_active = true;
@@ -1374,6 +1371,7 @@ void LauncherLinksUiUpdate() {
             state.filters[(size_t)filter_destination_index]
         );
         Json::SaveLinksJson();
+        LocateDefaultFilter();
     }
 
     if (move_destination_indexes[0] >= 0 && move_destination_indexes[1] >= 0) {
