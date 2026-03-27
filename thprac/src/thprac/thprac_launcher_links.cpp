@@ -268,6 +268,8 @@ struct Leaf {
 struct Filter {
     std::string name;
     std::vector<Leaf> leaves;
+    // This is mutable because some parts of the code don't want to change the name/leaves, but DO
+    // want to change the open/closed state.
     mutable bool is_open = false;
 };
 
@@ -634,11 +636,6 @@ inline bool LastEditErrorWasNameRelated() {
     return state.input_error == EditError::MissingName
         || state.input_error == EditError::DuplicateName
         || state.input_error == EditError::ReservedName;
-}
-
-static void ToggleFilterOpenState(Filter const& filter) {
-    filter.is_open = !filter.is_open; // This is why .is_open is mutable
-    Json::SaveLinksJson();
 }
 
 static void LocateDefaultFilter() {
@@ -1016,6 +1013,8 @@ static void HandleUiAction() {
                     current_filter.leaves.begin() + (int)insert_i,
                     std::move(new_leaf)
                 );
+                // Make sure the user can see the new leaf
+                current_filter.is_open = true;
                 // Select newly-added leaf
                 state.selection.SelectLeaf(filter_i, insert_i, current_filter.leaves[insert_i]);
                 Json::SaveLinksJson();
@@ -1231,13 +1230,15 @@ void LauncherLinksUiUpdate() {
             if (filter.is_open != current_filter_is_open) {
                 // User clicked the arrow
                 state.selection.SelectFilter(filter_i, filter);
-                ToggleFilterOpenState(filter);
+                filter.is_open = !filter.is_open;
+                Json::SaveLinksJson();
             } else {
                 // User clicked the filter, but not the arrow
                 if (!state.selection.Is(filter)) {
                     state.selection.SelectFilter(filter_i, filter);
                 } else {
-                    ToggleFilterOpenState(filter);
+                    filter.is_open = !filter.is_open;
+                    Json::SaveLinksJson();
                 }
             }
         }
@@ -1365,8 +1366,10 @@ void LauncherLinksUiUpdate() {
         ].leaves[
             (size_t)state.move_indexes[1]
         ];
-        auto& source_leaves = state.filters[(size_t)state.move_indexes[0]].leaves;
-        auto& destination_leaves = state.filters[(size_t)move_destination_indexes[0]].leaves;
+        auto& source_filter = state.filters[(size_t)state.move_indexes[0]];
+        auto& source_leaves = source_filter.leaves;
+        auto& destination_filter = state.filters[(size_t)move_destination_indexes[0]];
+        auto& destination_leaves = destination_filter.leaves;
 
         if (state.move_indexes[0] != move_destination_indexes[0]) {
             for (auto const& leaf : destination_leaves) {
@@ -1403,6 +1406,8 @@ void LauncherLinksUiUpdate() {
                 source_leaves.erase(source_leaves.begin() + state.move_indexes[1]);
             }
 
+            // Make sure the user can see where the leaf was moved to
+            destination_filter.is_open = true;
             // Select the now-moved leaf (TODO: Except that it might not have been moved...?)
             state.selection.SelectLeaf(
                 (size_t)move_destination_indexes[0],
