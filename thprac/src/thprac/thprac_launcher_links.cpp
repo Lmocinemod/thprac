@@ -66,6 +66,7 @@ constexpr const char* DEFAULT_FILTER_LEAVES[N_DEFAULT_FILTER_LEAVES][2] = {
 constexpr auto LABEL_INPUT_NAME = "##__input_name";
 constexpr auto LABEL_INPUT_TARGET = "##__input_target";
 constexpr auto LABEL_INPUT_TARGET_PARAMETERS = "##__input_target_parameteres";
+constexpr auto LABEL_ACTION_TOOLBAR = "##__action_toolbar";
 constexpr auto LABEL_LINKS = "##links";
 constexpr auto LABEL_COL_FILTERS = "##@__col_filters";
 constexpr auto LABEL_DND_LINK_FILTER = "##@__dnd_link_filter";
@@ -76,11 +77,6 @@ constexpr auto LABEL_DND_LINK_LEAF = "##@__dnd_link_leaf";
 namespace THPrac {
 // TODO: Move these to some other file (thprac_launcher_utils?)
 namespace Utils {
-std::optional<int> GetLauncherSetting(const char* name) {
-    // TODO: Either implement this function, or just remove it entirely.
-    [[maybe_unused]] auto silence_warning = name;
-    return std::optional(0);
-}
 std::string_view GetSuffixFromPath(const char* path_c_str) {
     auto path = std::string_view(path_c_str);
     size_t pos = path.rfind('.');
@@ -281,6 +277,8 @@ enum class UiAction {
     AddFilter,
     RenameFilter,
     DeleteFilter,
+    OpenAllFilters,
+    CloseAllFilters,
     RestoreDefaultFilter,
     ErrorDuplicateName,
     ErrorExecutingTarget,
@@ -367,7 +365,7 @@ public:
         m_leaf_i = std::nullopt;
     }
 
-    bool Exists() const {
+    inline bool Exists() const {
         // These branches do the same thing, but both must be present to avoid UB.
         if (m_is_leaf) {
             return m_target_ptr.leaf != nullptr;
@@ -375,27 +373,27 @@ public:
             return m_target_ptr.filter != nullptr;
         }
     }
-    bool ExistsAndIsLeaf() const {
+    inline bool ExistsAndIsLeaf() const {
         if (!Exists()) {
             return false;
         }
         return m_is_leaf;
     }
 
-    bool Is(Filter const& filter) const {
+    inline bool Is(Filter const& filter) const {
         if (m_is_leaf) {
             return false;
         }
         return m_target_ptr.filter == &filter;
     }
-    bool Is(Leaf const& leaf) const {
+    inline bool Is(Leaf const& leaf) const {
         if (!m_is_leaf) {
             return false;
         }
         return m_target_ptr.leaf == &leaf;
     }
 
-    SelectedFilterInfo GetFilterInfo() const {
+    inline SelectedFilterInfo GetFilterInfo() const {
         if (!Exists()) {
             PanicConstraintViolation("GetFilterInfo");
         }
@@ -405,7 +403,7 @@ public:
             .is_selected = !m_is_leaf,
         };
     }
-    SelectedLeafInfo GetLeafInfo() const {
+    inline SelectedLeafInfo GetLeafInfo() const {
         if (!Exists() || !m_is_leaf) {
             PanicConstraintViolation("GetLeafInfo");
         }
@@ -527,13 +525,6 @@ static void SaveLinksJson() {
 // TODO: Extract the "read the JSON object" part of this function into a different function, so that
 // the user's old links can be migrated to the new format.
 static void LoadLinksJson() {
-    enum class DefaultFilterState {
-        KeepPrevious,
-        Open,
-        Closed,
-    };
-    auto filter_state = (DefaultFilterState)Utils::GetLauncherSetting("filter_default").value_or(0);
-
     FILE* f;
     // We can't use "r" mode, because yyjson_read_fp() expects EOL to be exactly 1 byte in size.
     // (See yyjson.c:6327, where it compares the number of characters read to the size of the file
@@ -612,12 +603,6 @@ static void LoadLinksJson() {
             // TODO: Should a warning be displayed here?
         }
 
-        if (filter_state == DefaultFilterState::Open) {
-            filter.is_open = true;
-        } else if (filter_state == DefaultFilterState::Closed) {
-            filter.is_open = false;
-        }
-
         state.filters.push_back(filter);
     }
 }
@@ -648,6 +633,19 @@ static void LocateDefaultFilter() {
             state.default_filter_i = std::optional(i);
             break;
         }
+    }
+}
+
+static void OpenOrCloseAllFilters(bool should_be_open) {
+    for (auto const& filter : state.filters) {
+        filter.is_open = should_be_open;
+    }
+    Json::SaveLinksJson();
+
+    if (!should_be_open && state.selection.ExistsAndIsLeaf()) {
+        // Move selection to containing filter
+        size_t filter_i = state.selection.GetFilterInfo().i;
+        state.selection.SelectFilter(filter_i, state.filters[filter_i]);
     }
 }
 
@@ -970,6 +968,12 @@ static void HandleUiAction() {
     case UiAction::DeleteFilter:
         popup_str_id = THPRAC_LINKS_FILTER_DEL_MODAL;
         break;
+    case UiAction::OpenAllFilters:
+        OpenOrCloseAllFilters(true);
+        break;
+    case UiAction::CloseAllFilters:
+        OpenOrCloseAllFilters(false);
+        break;
     case UiAction::RestoreDefaultFilter:
         LoadDefaultFilterAndLeaves();
         Json::SaveLinksJson();
@@ -1179,6 +1183,67 @@ static bool ShowContextMenuIfApplicable(ContextMenuSource source) {
     #undef OPTION
     return true;
 }
+
+static void ActionToolbarMain() {
+    // My hope is that this code is so awful I'm never allowed to write ImGui code again.
+    auto padding = ImGui::GetStyle().FramePadding;
+    float font_size = ImGui::GetFontSize();
+
+    // Evil hack to ignore window padding and draw the toolbar across the entire window...
+    // in theory. In practice, a little bit of padding still remains, and I have no idea why.
+    // Inspired by: https://github.com/ocornut/imgui/issues/3226#issuecomment-863335922
+    float parent_padding_x = ImGui::GetCursorPosX();
+    ImGui::SetCursorPosX(0);
+    float width = ImGui::GetWindowWidth();
+    // Multiply padding by 4 instead of 2, because buttons are also padded internally
+    float height = ImGui::GetFontSize() + (padding.y * 4.0f);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetColorU32(ImGuiCol_MenuBarBg));
+    ImGui::BeginChild(
+        LABEL_ACTION_TOOLBAR,
+        ImVec2(width, height),
+        false,
+        ImGuiWindowFlags_NoScrollbar
+    );
+    ImGui::PopStyleColor();
+    ImGui::SetCursorPos(ImVec2(parent_padding_x, padding.y));
+
+    // Make buttons appear as only text until hovered
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetColorU32(ImGuiCol_MenuBarBg));
+    // The buttons will be exactly next to each other, so increase their internal padding
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(font_size, padding.y));
+
+    // Obviously a bit overkill for only 3 buttons, but I plan on adding more later.
+    #define OPTION(str, action) \
+        if (ImGui::Button(str)) { \
+            state.ui_action = action; \
+        } \
+        ImGui::SameLine(0.0f, 0.0f);
+
+    OPTION("Expand all", UiAction::OpenAllFilters);
+    OPTION("Collapse all", UiAction::CloseAllFilters);
+    if (!state.selection.Exists() && !state.default_filter_i.has_value()) {
+        OPTION(S(THPRAC_LINKS_RESTORE_DEFAULT), UiAction::RestoreDefaultFilter);
+    }
+
+    #undef OPTION
+    ImGui::PopStyleVar();
+
+    if constexpr (false) { // TODO: Actually implement this.
+    // If there's still room on the toolbar to do so, show this button, aligned right.
+    float help_button_width = ImGui::CalcTextSize("Help").x + (padding.x * 2.0f);
+    float space_required = help_button_width + parent_padding_x;
+    if (ImGui::GetContentRegionAvail().x >= space_required) {
+        ImGui::SetCursorPosX(ImGui::GetWindowContentRegionWidth() - space_required);
+        if (ImGui::Button("Help")) {
+            // ...
+            state.selection.Deselect();
+        }
+    }
+    }
+
+    ImGui::PopStyleColor();
+    ImGui::EndChild();
+}
 } // namespace Gui
 
 void LauncherLinksUiUpdate() {
@@ -1191,13 +1256,16 @@ void LauncherLinksUiUpdate() {
     }
     state.page_active = true;
 
-    ImGui::BeginChild(LABEL_LINKS);
-    defer(ImGui::EndChild());
-
     // TODO: Don't use -1 to mean "invalid index".
     // TODO: Apparently [0] is the index for filters, and [1] for leaves?
     int move_destination_indexes[2] = {-1, -1}; // "destIdx"
     int filter_destination_index = -1; // "filterDestIdx"
+
+    if (state.filters.size() > 0) {
+        Gui::ActionToolbarMain();
+    }
+    ImGui::BeginChild(LABEL_LINKS);
+    defer(ImGui::EndChild());
 
     defer(Gui::HandleUiAction());
     if (Gui::ShowContextMenuIfApplicable(Gui::ContextMenuSource::Background)) {
