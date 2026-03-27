@@ -12,8 +12,6 @@
 #include <yyjson.h>
 
 #include <array>
-// TODO: std::format() apparently adds 0.3MB to the binary size, so replace it before upstreaming.
-#include <format>
 #include <optional>
 #include <string>
 #include <vector>
@@ -298,22 +296,36 @@ enum class EditError {
     ReservedName,
 };
 
-// TODO: Either remove this function, or replace it with something better.
-static void Debug(const char* message, bool is_error = false) {
-    if (is_error) {
-        fprintf(stderr, "ERROR: %s\n", message);
-    } else {
-        fprintf(stderr, "INFO: %s\n", message);
-    }
+static void StderrAndMessageBoxVprintf(
+    LPCWSTR mb_lpCaption,
+    UINT mb_uType,
+    const wchar_t* format,
+    va_list vlist
+) {
+    constexpr size_t PRINT_CHARS_MAX = 1000; // Probably enough space
+    wchar_t message[PRINT_CHARS_MAX] = {};
+    vswprintf_s(message, PRINT_CHARS_MAX, format, vlist);
 
-    UINT uType = is_error ? MB_ICONERROR : MB_ICONINFORMATION;
-    MessageBoxA(Utils::GetLauncherHwnd(), message, "DEBUG", uType);
+    fputws(message, stderr);
+    fputwc(L'\n', stderr);
+    MessageBoxW(Utils::GetLauncherHwnd(), message, mb_lpCaption, mb_uType);
 }
 
-// TODO: Probably handle errors more gracefully... or something?
-[[noreturn]] static void PanicOutOfMemory() {
-    Debug("Out of memory (probably)", true);
+// TODO: This might be useful enough to be worth putting in a utils file?
+[[noreturn]] static void PanicFatalError(const wchar_t* format, ...) {
+    va_list args;
+    va_start(args, format);
+    StderrAndMessageBoxVprintf(L"FATAL ERROR", MB_ICONERROR, format, args);
+    va_end(args);
     exit(EXIT_FAILURE);
+}
+
+[[noreturn]] static void PanicOutOfMemory(const wchar_t* fn_name) {
+    PanicFatalError(
+        L"%s(): Execution failed because the system is out of memory.\n\n"
+        L"thprac will now close.",
+        fn_name
+    );
 }
 
 namespace GlobalMutableState {
@@ -336,13 +348,12 @@ private:
         const Leaf* leaf;
     } m_target_ptr = {.filter = nullptr};
 
-    [[noreturn]] void PanicDoesNotExist(const char* method_name) const {
-        auto message = std::format(
-            "CONSTRAINT VIOLATION: Attempt to call Selection.{}() while no selection exists",
+    [[noreturn]] void PanicDoesNotExist(const wchar_t* method_name) const {
+        PanicFatalError(
+            L"CONSTRAINT VIOLATION: Attempt to call Selection.%s() while no selection exists.\n\n"
+            L"You have encountered a bug in thprac. Please submit a bug report.",
             method_name
         );
-        Debug(message.c_str(), true);
-        exit(EXIT_FAILURE);
     }
 
 public:
@@ -395,7 +406,7 @@ public:
 
     inline SelectedFilterInfo GetFilterInfo() const {
         if (!Exists()) {
-            PanicDoesNotExist("GetFilterInfo");
+            PanicDoesNotExist(L"GetFilterInfo");
         }
 
         return {
@@ -405,13 +416,12 @@ public:
     }
     inline SelectedLeafInfo GetLeafInfo() const {
         if (!Exists()) {
-            PanicDoesNotExist("GetLeafInfo");
+            PanicDoesNotExist(L"GetLeafInfo");
         } else if (!m_is_leaf) {
-            Debug(
-                "CONSTRAINT VIOLATION: Attempt to call Selection.GetLeafInfo() while filter is selected",
-                true
+            PanicFatalError(
+                L"CONSTRAINT VIOLATION: Attempt to call Selection.GetLeafInfo() while a filter is selected.\n\n"
+                L"You have encountered a bug in thprac. Please submit a bug report."
             );
-            exit(EXIT_FAILURE);
         }
 
         return {
@@ -483,14 +493,22 @@ static const std::wstring& GetLinksJsonFilePath() {
     return path;
 }
 
+[[noreturn]] static void PanicFileIoError(const wchar_t* message, const wchar_t* advice) {
+    constexpr size_t SYSTEM_MESSAGE_CHARS_MAX = 250; // Probably enough space
+    wchar_t system_message[SYSTEM_MESSAGE_CHARS_MAX] = {};
+    __wcserror_s(system_message, SYSTEM_MESSAGE_CHARS_MAX, nullptr);
+
+    PanicFatalError(L"%s: %s\n\n%s", message, system_message, advice);
+}
+
 static void SaveLinksJson() {
     auto doc = yyjson_mut_doc_new(nullptr);
     if (doc == nullptr) {
-        PanicOutOfMemory();
+        PanicOutOfMemory(L"SaveLinksJson");
     }
     auto root = yyjson_mut_obj(doc);
     if (root == nullptr) {
-        PanicOutOfMemory();
+        PanicOutOfMemory(L"SaveLinksJson");
     }
     yyjson_mut_doc_set_root(doc, root);
     defer(yyjson_mut_doc_free(doc));
@@ -516,8 +534,11 @@ static void SaveLinksJson() {
     auto io_error = _wfopen_s(&f, GetLinksJsonFilePath().c_str(), L"wb");
     if (io_error != NULL) {
         // TODO: Probably have some kind of retry behavior?
-        auto message = std::format("Failed to open links.json for editing. Error code: {}", io_error);
-        Debug(message.c_str(), true);
+        PanicFileIoError(
+            L"Failed to open links.json for editing",
+            L"Please check if another program is using the file, if its permissions are incorrect, "
+            L"or if it's stored on a read-only drive."
+        );
     }
     defer(fclose(f));
 
@@ -525,8 +546,11 @@ static void SaveLinksJson() {
     yyjson_mut_write_fp(f, doc, JSON_WRITE_FLAGS, nullptr, &write_err);
     if (write_err.code != YYJSON_WRITE_SUCCESS) {
         // TODO: Probably have some kind of retry behavior?
-        auto message = std::format("Failed to save links to links.json: {}", write_err.msg);
-        Debug(message.c_str(), true);
+        PanicFatalError(
+            L"Failed to save links to links.json: %s\n\n"
+            L"This is probably a bug in thprac. Please submit a bug report.",
+            write_err.msg
+        );
     }
 }
 
@@ -547,12 +571,10 @@ static void LoadLinksJson() {
         }
 
         // TODO: Probably have some kind of retry behavior?
-        auto message = std::format(
-            "FATAL: Failed to open links.json for reading. Error code: {}",
-            io_error
+        PanicFileIoError(
+            L"Failed to open links.json for reading",
+            L"Please check if another program is using the file, or if its permissions are incorrect."
         );
-        Debug(message.c_str(), true);
-        exit(EXIT_FAILURE);
     }
     defer(fclose(f));
 
@@ -562,12 +584,13 @@ static void LoadLinksJson() {
     if (read_err.code != YYJSON_READ_SUCCESS) {
         // TODO: Probably warn the user that the file is corrupt or something instead? And then do
         // retry behavior (or give the option to just exit).
-        auto message = std::format(
-            "FATAL: Failed to read links from links.json: {}, code {}, pos {}",
-            read_err.msg, read_err.code, read_err.pos
+        PanicFatalError(
+            L"Failed to read links from links.json: %s\n"
+            L"Position in file: %u\n\n"
+            L"links.json is probably corrupt. Please manually edit links.json and try again.",
+            read_err.msg,
+            read_err.pos
         );
-        Debug(message.c_str(), true);
-        exit(EXIT_FAILURE);
     }
     defer(yyjson_doc_free(doc));
     auto root = yyjson_doc_get_root(doc); // Will never return nullptr
@@ -666,7 +689,17 @@ static std::string WrapTarget(const char* target, const char* parameters, Target
     if (!TargetIsExecutable(target, type)) {
         return std::string(target);
     }
-    return std::format("\"{}\" {}", target, parameters);
+
+    std::string_view target_view = target;
+    std::string_view parameters_view = parameters;
+    std::string result;
+    // Enough space for target+parameters, two quotation marks, and a space.
+    result.reserve(target_view.size() + parameters_view.size() + 3);
+    result.push_back('"');
+    result.append(target_view);
+    result.append("\" ");
+    result.append(parameters_view);
+    return result;
 }
 
 struct TargetInfo {
