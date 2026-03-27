@@ -460,6 +460,8 @@ static void LoadDefaultFilterAndLeaves() {
             .target = target,
         });
     }
+
+    state.selection.SelectFilter(*state.default_filter_i, state.filters[*state.default_filter_i]);
 }
 
 namespace Json {
