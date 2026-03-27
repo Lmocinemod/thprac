@@ -336,7 +336,7 @@ private:
         const Leaf* leaf;
     } m_target_ptr = {.filter = nullptr};
 
-    [[noreturn]] void PanicConstraintViolation(const char* method_name) const {
+    [[noreturn]] void PanicDoesNotExist(const char* method_name) const {
         auto message = std::format(
             "CONSTRAINT VIOLATION: Attempt to call Selection.{}() while no selection exists",
             method_name
@@ -395,7 +395,7 @@ public:
 
     inline SelectedFilterInfo GetFilterInfo() const {
         if (!Exists()) {
-            PanicConstraintViolation("GetFilterInfo");
+            PanicDoesNotExist("GetFilterInfo");
         }
 
         return {
@@ -404,8 +404,14 @@ public:
         };
     }
     inline SelectedLeafInfo GetLeafInfo() const {
-        if (!Exists() || !m_is_leaf) {
-            PanicConstraintViolation("GetLeafInfo");
+        if (!Exists()) {
+            PanicDoesNotExist("GetLeafInfo");
+        } else if (!m_is_leaf) {
+            Debug(
+                "CONSTRAINT VIOLATION: Attempt to call Selection.GetLeafInfo() while filter is selected",
+                true
+            );
+            exit(EXIT_FAILURE);
         }
 
         return {
@@ -813,7 +819,7 @@ static EditResult EditLeafPopupMain() {
     }
     EditPopupShowErrorIfApplicable(state.input_error);
 
-    if (ImGui::Button(S(THPRAC_LINKS_EDIT_FILE))) {
+    if (ImGui::Button(S(THPRAC_LINKS_BUTTON_SELECT_FILE))) {
         auto file_str = Utils::WindowsFilePicker();
         if (file_str.length() > 0) {
             state.input_error = EditError::Ok;
@@ -829,7 +835,7 @@ static EditResult EditLeafPopupMain() {
         }
     }
     ImGui::SameLine();
-    if (ImGui::Button(S(THPRAC_LINKS_EDIT_FOLDER))) {
+    if (ImGui::Button(S(THPRAC_LINKS_BUTTON_SELECT_FOLDER))) {
         auto maybe_folder = Utils::WindowsFolderPicker();
         if (maybe_folder.has_value()) {
             state.input_error = EditError::Ok;
@@ -843,7 +849,7 @@ static EditResult EditLeafPopupMain() {
         }
     }
     ImGui::SameLine();
-    if (ImGui::Button(S(THPRAC_LINKS_EDIT_INPUT))) {
+    if (ImGui::Button(S(THPRAC_LINKS_BUTTON_MANUAL_INPUT))) {
         state.input_error = EditError::Ok;
         state.input_target[0] = '\0';
         state.input_target_type = TargetType::Url;
@@ -1215,16 +1221,16 @@ static void ActionToolbarMain() {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(font_size, padding.y));
 
     // Obviously a bit overkill for only 3 buttons, but I plan on adding more later.
-    #define OPTION(str, action) \
-        if (ImGui::Button(str)) { \
+    #define OPTION(glossary_id, action) \
+        if (ImGui::Button(S(glossary_id))) { \
             state.ui_action = action; \
         } \
         ImGui::SameLine(0.0f, 0.0f);
 
-    OPTION("Expand all", UiAction::OpenAllFilters);
-    OPTION("Collapse all", UiAction::CloseAllFilters);
+    OPTION(THPRAC_LINKS_BUTTON_EXPAND_ALL, UiAction::OpenAllFilters);
+    OPTION(THPRAC_LINKS_BUTTON_COLLAPSE_ALL, UiAction::CloseAllFilters);
     if (!state.selection.Exists() && !state.default_filter_i.has_value()) {
-        OPTION(S(THPRAC_LINKS_RESTORE_DEFAULT), UiAction::RestoreDefaultFilter);
+        OPTION(THPRAC_LINKS_RESTORE_DEFAULT, UiAction::RestoreDefaultFilter);
     }
 
     #undef OPTION

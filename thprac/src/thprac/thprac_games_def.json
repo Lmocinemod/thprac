@@ -289,21 +289,23 @@
         "リンクを開くときにエラーが発生しました。\nこのリンクが有効か確認してください。"
       ],
 
-      "THPRAC_LAUNCHER_TAB_GAMES": ["游戏###games", "Games###games", "ゲーム###games"],
-      "THPRAC_LAUNCHER_TAB_LINKS": ["链接###links", "Links###links", "リンク###links"],
-      "THPRAC_LAUNCHER_TAB_TOOLS": ["工具###tools", "Tools###tools", "ツール###tools"],
-      "THPRAC_LAUNCHER_TAB_CONFG": ["设置###config", "Settings###config", "設定###config" ],
-
       "THPRAC_LINKS_EDIT_NAME": [ "名称：", "Name:", "名前：" ],
       "THPRAC_LINKS_EDIT_LINK": [ "链接：", "Link:", "リンク：" ],
       "THPRAC_LINKS_EDIT_PARAM": [ "参数（可选）：", "Parameters (Optional):", "パラメータ(オプション)：" ],
-      "THPRAC_LINKS_EDIT_FILE": [ "选择文件", "Select file", "ファイルを選択" ],
-      "THPRAC_LINKS_EDIT_FOLDER": [ "选择文件夹", "Select folder", "フォルダーを選択" ],
-      "THPRAC_LINKS_EDIT_INPUT": [ "手动键入", "Manual input", "手動入力" ],
       "THPRAC_LINKS_EDIT_ERR_NAME": [ "你必须键入一个名称。", "You must enter a name.", "名前を入力する必要があります。" ],
       "THPRAC_LINKS_EDIT_ERR_LINK": [ "你必须键入/选择一个链接。", "You must enter/select a link.", "リンクを入力/選択する必要があります。" ],
       "THPRAC_LINKS_EDIT_ERR_DUPLICATE": [ "你无法使用重复的名称。", "Duplicate names are not allowed.", "重複した名前は使えません。" ],
       "THPRAC_LINKS_EDIT_ERR_RESERVED": [ "你不能使用这个名称。", "You can not use this name.", "この名前は使用できません。" ],
+      "THPRAC_LINKS_BUTTON_SELECT_FILE": [ "选择文件", "Select file", "ファイルを選択" ],
+      "THPRAC_LINKS_BUTTON_SELECT_FOLDER": [ "选择文件夹", "Select folder", "フォルダーを選択" ],
+      "THPRAC_LINKS_BUTTON_MANUAL_INPUT": [ "手动键入", "Manual input", "手動入力" ],
+      "THPRAC_LINKS_BUTTON_EXPAND_ALL": [ "全部展开", "Expand all", "すべて開く" ],
+      "THPRAC_LINKS_BUTTON_COLLAPSE_ALL": [ "全部收起", "Collapse all", "すべて閉じる" ],
+
+      "THPRAC_LAUNCHER_TAB_GAMES": ["游戏###games", "Games###games", "ゲーム###games"],
+      "THPRAC_LAUNCHER_TAB_LINKS": ["链接###links", "Links###links", "リンク###links"],
+      "THPRAC_LAUNCHER_TAB_TOOLS": ["工具###tools", "Tools###tools", "ツール###tools"],
+      "THPRAC_LAUNCHER_TAB_CONFG": ["设置###config", "Settings###config", "設定###config" ],
 
       "THPRAC_GAMES": [ "游戏", "Games", "ゲーム" ],
       "THPRAC_GAMES_MAIN_SERIES": [ "整数作", "Main Series", "整数作" ],
