@@ -294,7 +294,7 @@
       "THPRAC_LINKS_EDIT_PARAM": [ "参数（可选）：", "Parameters (Optional):", "パラメータ(オプション)：" ],
       "THPRAC_LINKS_EDIT_ERR_NAME": [ "你必须键入一个名称。", "You must enter a name.", "名前を入力する必要があります。" ],
       "THPRAC_LINKS_EDIT_ERR_LINK": [ "你必须键入/选择一个链接。", "You must enter/select a link.", "リンクを入力/選択する必要があります。" ],
-      "THPRAC_LINKS_EDIT_ERR_DUPLICATE": [ "你无法使用重复的名称。", "Duplicate names are not allowed.", "重複した名前は使えません。" ],
+      "THPRAC_LINKS_EDIT_ERR_DUPLICATE": [ "名称不能重复。", "Duplicate names are not allowed.", "重複した名前は使えません。" ],
       "THPRAC_LINKS_EDIT_ERR_RESERVED": [ "你不能使用这个名称。", "You can not use this name.", "この名前は使用できません。" ],
       "THPRAC_LINKS_BUTTON_SELECT_FILE": [ "选择文件", "Select file", "ファイルを選択" ],
       "THPRAC_LINKS_BUTTON_SELECT_FOLDER": [ "选择文件夹", "Select folder", "フォルダーを選択" ],
