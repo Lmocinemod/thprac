@@ -1132,11 +1132,9 @@ static void HandleUiAction() {
         if (result != EditResult::InProgress) {
             if (result == EditResult::Complete) {
                 auto& filter_to_edit = state.filters[state.selection.GetFilterInfo().i];
-                if (filter_to_edit.name == DEFAULT_FILTER_NAME) {
-                    state.default_filter_i = std::nullopt;
-                }
                 filter_to_edit.name = state.input_name;
                 Json::SaveLinksJson();
+                LocateDefaultFilter();
             }
             ImGui::CloseCurrentPopup();
         }
@@ -1146,14 +1144,11 @@ static void HandleUiAction() {
     if (Modal(S(THPRAC_LINKS_FILTER_DEL_MODAL) /* (Default size) */)) {
         ImGui::TextUnformatted(S(THPRAC_LINKS_FILTER_DELETE_WARNING));
         if (YesNoChoice(S(THPRAC_YES), S(THPRAC_NO), 6.0f)) {
-            size_t filter_i = state.selection.GetFilterInfo().i;
-            if (state.filters[filter_i].name == DEFAULT_FILTER_NAME) {
-                state.default_filter_i = std::nullopt;
-            }
             state.filters.erase(state.filters.begin() + (int)state.selection.GetFilterInfo().i);
             // Unclear what should be selected at this point
             state.selection.Deselect();
             Json::SaveLinksJson();
+            LocateDefaultFilter();
         }
         ImGui::EndPopup();
     }
